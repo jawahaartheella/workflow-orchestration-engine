@@ -1,5 +1,7 @@
 import express from 'express';
 
+import testResourcesRoutes from './modules/test-resources/test-resource.routes.js';
+
 import { apiKeyAuth } from './middleware/api-key-auth.middleware.js';
 
 const app = express();
@@ -20,5 +22,7 @@ app.get('/api/test-auth', apiKeyAuth, (_req, res) => {
         apiKeyId: res.locals.apiKeyId
     });
 });
+
+app.use('/api/test-resources', testResourcesRoutes);
 
 export default app;

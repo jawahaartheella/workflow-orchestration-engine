@@ -64,3 +64,12 @@ export async function updateWorkflow(
     );
 }
 
+export async function deleteWorkflow(
+    workflowId: string,
+    tenantId: string
+) {
+    return WorkflowModel.findOneAndDelete({
+        _id: workflowId,
+        tenantId
+    });
+}

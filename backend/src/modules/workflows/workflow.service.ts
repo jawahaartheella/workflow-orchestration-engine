@@ -39,3 +39,28 @@ export async function getWorkflowById(workflowId: string, tenantId: string) {
     return workflow
 }
 
+interface UpdateWorkflowInput {
+    name?: string,
+    description?: string
+}
+
+export async function updateWorkflow(
+    workflowId: string,
+    tenantId: string,
+    input: UpdateWorkflowInput
+) {
+    return WorkflowModel.findOneAndUpdate(
+        {
+            _id: workflowId,
+            tenantId
+        },
+        {
+            $set: input
+        },
+        {
+            new: true,
+            runValidators: true
+        }
+    );
+}
+

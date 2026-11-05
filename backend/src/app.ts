@@ -1,8 +1,9 @@
 import express from 'express';
+import { apiKeyAuth } from './middleware/api-key-auth.middleware.js';
 
 import testResourcesRoutes from './modules/test-resources/test-resource.routes.js';
+import workflowRoutes from './modules/workflows/workflow.routes.js';
 
-import { apiKeyAuth } from './middleware/api-key-auth.middleware.js';
 
 const app = express();
 
@@ -24,5 +25,6 @@ app.get('/api/test-auth', apiKeyAuth, (_req, res) => {
 });
 
 app.use('/api/test-resources', testResourcesRoutes);
+app.use('/api/workflows', workflowRoutes);
 
 export default app;

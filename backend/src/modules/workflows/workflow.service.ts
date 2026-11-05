@@ -22,3 +22,20 @@ export async function createWorkflow(
     return workflow;
 }
 
+export async function getWorkflows(tenantId: string) {
+    const workflows = await WorkflowModel.find({
+        tenantId
+    }).sort({ createdAt: -1 });
+
+    return workflows;
+}
+
+export async function getWorkflowById(workflowId: string, tenantId: string) {
+    const workflow = await WorkflowModel.findOne({
+        _id: workflowId,
+        tenantId
+    });
+
+    return workflow
+}
+

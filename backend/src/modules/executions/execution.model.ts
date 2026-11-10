@@ -26,7 +26,7 @@ const executionSchema = new Schema(
         },
         output: {
             type: Schema.Types.Mixed,
-            default: {}
+            default: null
         },
         startedAt: {
             type: Date,

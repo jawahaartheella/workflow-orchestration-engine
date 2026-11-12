@@ -73,3 +73,23 @@ export async function deleteWorkflow(
         tenantId
     });
 }
+
+export async function updateWorkflowStatus(
+    workflowId: string,
+    tenantId: string,
+    status: 'ACTIVE' | 'INACTIVE'
+) {
+    return WorkflowModel.findOneAndUpdate(
+        {
+            _id: workflowId,
+            tenantId
+        },
+        {
+            $set: { status }
+        },
+        {
+            new: true,
+            runValidators: true
+        }
+    );
+}

@@ -41,3 +41,11 @@ export async function startWorkflowExecution(data: StartExecutionInput) {
     // 5. Return the newly created execution
     return execution;
 }
+
+export async function getExecutions(tenantId: string) {
+    return ExecutionModel.find({
+        tenantId
+    }).sort({
+        createdAt: -1
+    });
+}

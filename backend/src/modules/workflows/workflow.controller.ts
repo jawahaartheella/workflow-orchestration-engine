@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import { Types } from "mongoose";
 
-import { createWorkflow, deleteWorkflow, getWorkflowById, getWorkflows, updateWorkflow } from "./workflow.service.js";
+import { createWorkflow, deleteWorkflow, getWorkflowById, getWorkflows, updateWorkflow, updateWorkflowStatus } from "./workflow.service.js";
 
 export const createWorkflowController: RequestHandler = async (req, res, next) => {
     try {
@@ -171,5 +171,75 @@ export const deleteWorkflowController: RequestHandler = async (req, res, next) =
         });
     } catch(error) {
         next(error)
+    }
+}
+
+export const activateWorkfolwController: RequestHandler = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const tenantId = res.locals.tenantId as string;
+
+        if (typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
+            res.status(400).json({
+                message: 'Invalid workflow ID.'
+            });
+            return;
+        }
+
+        const workflow = await updateWorkflowStatus(
+            id,
+            tenantId,
+            'ACTIVE'
+        );
+
+        if (!workflow) {
+            res.status(404).json({
+                message: 'Workflow not found.'
+            });
+            return;
+        }
+        
+        res.status(200).json({
+            message: 'Workflow activated successfully!',
+            data: workflow
+        });
+
+    } catch (error) {
+        next(error);
+    }
+}
+
+export const deactivateWorkfolwController: RequestHandler = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const tenantId = res.locals.tenantId as string;
+
+        if (typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
+            res.status(400).json({
+                message: 'Invalid workflow ID.'
+            });
+            return;
+        }
+
+        const workflow = await updateWorkflowStatus(
+            id,
+            tenantId,
+            'INACTIVE'
+        );
+
+        if (!workflow) {
+            res.status(404).json({
+                message: 'Workflow not found.'
+            });
+            return;
+        }
+        
+        res.status(200).json({
+            message: 'Workflow deactivated successfully!',
+            data: workflow
+        });
+
+    } catch (error) {
+        next(error);
     }
 }

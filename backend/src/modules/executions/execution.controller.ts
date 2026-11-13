@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { Types } from "mongoose";
-import { getExecutions, startWorkflowExecution } from "./execution.servie.js";
+import { getExecutionById, getExecutions, startWorkflowExecution } from "./execution.servie.js";
 
 export const startWorkflowExecutionController: RequestHandler = async (req, res, next) => {
     try {
@@ -76,6 +76,38 @@ export const getExecutionsController: RequestHandler = async (req, res, next) =>
             data: executions
         });
 
+    } catch(error) {
+        next(error);
+    }
+}
+
+export const getExecutionByIdController: RequestHandler = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const tenantId = res.locals.tenantId as string;
+
+        if(typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
+            res.status(400).json({
+                message: 'Invalid Execution ID.'
+            });
+
+            return;
+        }
+
+        const execution = await getExecutionById(id, tenantId);
+
+        if(!execution) {
+            res.status(404).json({
+                message: 'Execution not found.'
+            });
+
+            return;
+        }
+
+        res.status(200).json({
+            message: 'Execution retrieved successfully!',
+            data: execution
+        });
     } catch(error) {
         next(error);
     }

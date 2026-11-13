@@ -49,3 +49,13 @@ export async function getExecutions(tenantId: string) {
         createdAt: -1
     });
 }
+
+export async function getExecutionById(
+    executionId: string,
+    tenantId: string
+) {
+    return ExecutionModel.findOne({
+        _id: executionId,
+        tenantId
+    });
+}

@@ -90,7 +90,12 @@ export const updateWorkflowController: RequestHandler = async (req, res, next) =
     try {
         const { id } = req.params;
         const tenantId = res.locals.tenantId as string;
-        const { name, description } = req.body;
+        const { 
+            name, 
+            description,
+            nodes,
+            edges
+        } = req.body ?? {};
 
         if(typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
             res.status(400).json({
@@ -100,7 +105,7 @@ export const updateWorkflowController: RequestHandler = async (req, res, next) =
             return
         }
 
-        if(name === undefined && description === undefined) {
+        if(name === undefined && description === undefined && nodes === undefined && edges === undefined) {
             res.status(400).json({
                 message: "Provide at least one field to update."
             });
@@ -122,15 +127,35 @@ export const updateWorkflowController: RequestHandler = async (req, res, next) =
             return
         }
 
+        if(nodes !== undefined && !Array.isArray(nodes)) {
+            res.status(400).json({
+                message: 'Nodes must be an array.'
+            });
+
+            return;
+        }
+
+        if(edges !== undefined && !Array.isArray(edges)) {
+            res.status(400).json({
+                message: 'Edges must be an array.'
+            });
+
+            return;
+        }
+
         const workflow = await updateWorkflow(id, tenantId, {
             ...(name !== undefined && { name: name.trim() }),
-            ...(description !== undefined && {description: description.trim()})
+            ...(description !== undefined && { description: description.trim() }),
+            ...(nodes !== undefined && { nodes }),
+            ...(edges !== undefined && { edges })
         });
 
         if(!workflow) {
             res.status(404).json({
                 message: "Workflow not found."
             });
+
+            return;
         }
 
         res.status(200).json({

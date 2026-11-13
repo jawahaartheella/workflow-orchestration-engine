@@ -1,6 +1,5 @@
 import type { InferSchemaType } from "mongoose";
 import { model, Schema } from "mongoose";
-import { TestResourceModel } from "../test-resources/test-resource.model.js";
 
 // Position of the node on the visual workflow canvas
 const positionSchema = new Schema(

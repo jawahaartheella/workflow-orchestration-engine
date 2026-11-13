@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { WorkflowModel } from "./workflow.model.js";
+import type { Workflow } from "./workflow.model.js";
 
 interface CreateWorkflowInput {
     name: string,
@@ -41,7 +42,9 @@ export async function getWorkflowById(workflowId: string, tenantId: string) {
 
 interface UpdateWorkflowInput {
     name?: string,
-    description?: string
+    description?: string,
+    nodes?: Workflow['nodes'],
+    edges?: Workflow['edges']
 }
 
 export async function updateWorkflow(

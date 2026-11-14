@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import { Types } from "mongoose";
 
-import { createWorkflow, deleteWorkflow, getWorkflowById, getWorkflows, updateWorkflow, updateWorkflowStatus } from "./workflow.service.js";
+import { createWorkflow, deleteWorkflow, getWorkflowById, getWorkflows, updateWorkflow, updateWorkflowStatus,WorkflowValidationError } from "./workflow.service.js";
 
 export const createWorkflowController: RequestHandler = async (req, res, next) => {
     try {
@@ -230,6 +230,14 @@ export const activateWorkfolwController: RequestHandler = async (req, res, next)
         });
 
     } catch (error) {
+        if(error instanceof WorkflowValidationError) {
+            res.status(400).json({
+                message: error.message,
+                errors: error.errors
+            });
+            return;
+        }
+
         next(error);
     }
 }

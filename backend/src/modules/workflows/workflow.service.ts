@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { WorkflowModel } from "./workflow.model.js";
 import type { Workflow } from "./workflow.model.js";
+import { validateWorkflowDefinition } from "./workflow.validator.js";
 
 interface CreateWorkflowInput {
     name: string,
@@ -77,22 +78,41 @@ export async function deleteWorkflow(
     });
 }
 
+export class WorkflowValidationError extends Error {
+    constructor(public errors: string[]){
+        super('Workflow Definition is invalid');
+        this.name = "WorkflowValidationError"
+    }
+}
+
 export async function updateWorkflowStatus(
     workflowId: string,
     tenantId: string,
     status: 'ACTIVE' | 'INACTIVE'
 ) {
-    return WorkflowModel.findOneAndUpdate(
+    const workflow = await WorkflowModel.findOne(
         {
             _id: workflowId,
             tenantId
-        },
-        {
-            $set: { status }
-        },
-        {
-            new: true,
-            runValidators: true
         }
     );
+
+    if(!workflow) {
+        return null;
+    }
+
+    // Validate only when activating
+    if(status === 'ACTIVE') {
+        const errors = validateWorkflowDefinition(workflow);
+
+        if(errors.length > 0) {
+            throw new WorkflowValidationError(errors);
+        }
+    }
+
+    workflow.status = status;
+
+    await workflow.save();
+
+    return workflow;
 }

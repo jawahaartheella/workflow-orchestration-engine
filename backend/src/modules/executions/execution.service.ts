@@ -1,0 +1,88 @@
+import { WorkflowModel } from "../workflows/workflow.model.js";
+import { ExecutionModel } from "./execution.model.js";
+import { executeWorkflow } from "./engine/execution.engine.js";
+
+interface StartExecutionInput {
+    workflowId: string,
+    tenantId: string,
+    input: Record<string, unknown>
+}
+
+export async function startWorkflowExecution(data: StartExecutionInput) {
+
+    // 1. Find the workflow belonging to the authenticated tenant
+    const workflow = await WorkflowModel.findOne({
+        _id: data.workflowId,
+        tenantId: data.tenantId
+    });
+
+    // 2. Check whether the workflow exists
+    if (!workflow) {
+        throw new Error('Workflow not found.');
+    }
+
+    // 3. Only active workflows can be executed
+    if (workflow.status !== 'ACTIVE') {
+        throw new Error('Only active workflows can be executed.');
+    }
+
+    // 4. Create a new execution record
+    const execution = await ExecutionModel.create({
+        workflowId: workflow._id,
+        tenantId: data.tenantId,
+        status: 'PENDING',
+        input: data.input ?? {},
+        output: null,
+        nodeExecutions: [],
+        startedAt: null,
+        completedAt: null,
+        error: null
+    });
+
+    // 5. Mark execution as RUNNING
+    execution.status = 'RUNNING';
+    execution.startedAt = new Date();
+
+    // 6. Start the execution engine
+    const result = await executeWorkflow(
+        workflow,
+        {
+            executionId: execution._id.toString(),
+            tenantId: data.tenantId,
+            workflowId: workflow._id.toString(),
+            workflowInput: data.input ?? {}
+        }
+    );
+
+    // 7. Save individual node execution results
+    execution.set('nodeExecutions', result.nodeExecutions);
+
+    // 8. Update overall execution status and output
+    execution.status = result.status;
+    execution.output = result.output;
+    execution.error = result.error;
+    execution.completedAt = new Date();
+
+    // 9. Persist final execution details
+    await execution.save();
+
+    return execution;
+}
+
+export async function getExecutions(tenantId: string) {
+    return ExecutionModel.find({
+        tenantId
+    }).sort({
+        createdAt: -1
+    });
+}
+
+export async function getExecutionById(
+    executionId: string,
+    tenantId: string
+) {
+    return ExecutionModel.findOne({
+        _id: executionId,
+        tenantId
+    });
+}

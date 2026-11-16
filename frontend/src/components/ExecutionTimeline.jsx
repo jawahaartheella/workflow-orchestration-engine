@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Clock, XCircle, AlertCircle, Play, ChevronDown, ChevronRight, Terminal } from 'lucide-react';
+import {
+  CheckCircle2,
+  Clock,
+  XCircle,
+  AlertCircle,
+  Play,
+  ChevronDown,
+  ChevronRight,
+  Terminal,
+  RotateCcw,
+  ShieldAlert,
+} from 'lucide-react';
 
 export default function ExecutionTimeline({ timeline = [], currentStep = null }) {
   const [expandedIndex, setExpandedIndex] = useState(null);
@@ -24,6 +35,12 @@ export default function ExecutionTimeline({ timeline = [], currentStep = null })
           const isCompleted = step.status === 'COMPLETED';
           const isFailed = step.status === 'FAILED';
           const isCancelled = step.status === 'CANCELLED';
+          const isCompensation =
+            step.isCompensation ||
+            step.step?.toLowerCase().includes('compensation') ||
+            step.step?.toLowerCase().includes('rollback') ||
+            step.step?.toLowerCase().includes('release') ||
+            step.step?.toLowerCase().includes('refund');
           const isExpanded = expandedIndex === idx;
 
           return (
@@ -31,7 +48,11 @@ export default function ExecutionTimeline({ timeline = [], currentStep = null })
               {/* Dot icon on vertical line */}
               <div
                 className={`absolute -left-[27px] top-1 w-5 h-5 rounded-full flex items-center justify-center border-2 transition-all ${
-                  isRunning
+                  isCompensation && isCompleted
+                    ? 'bg-purple-600 border-white dark:border-slate-900 text-white ring-2 ring-purple-400/30'
+                    : isCompensation && isFailed
+                    ? 'bg-rose-600 border-white dark:border-slate-900 text-white ring-2 ring-rose-400/30'
+                    : isRunning
                     ? 'bg-indigo-600 border-white dark:border-slate-900 text-white animate-pulse ring-4 ring-indigo-500/20'
                     : isCompleted
                     ? 'bg-emerald-500 border-white dark:border-slate-900 text-white'
@@ -42,7 +63,9 @@ export default function ExecutionTimeline({ timeline = [], currentStep = null })
                     : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500'
                 }`}
               >
-                {isCompleted ? (
+                {isCompensation ? (
+                  <RotateCcw className="w-3 h-3" />
+                ) : isCompleted ? (
                   <CheckCircle2 className="w-3 h-3" />
                 ) : isFailed ? (
                   <XCircle className="w-3 h-3" />
@@ -54,15 +77,30 @@ export default function ExecutionTimeline({ timeline = [], currentStep = null })
               </div>
 
               {/* Card Container */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm hover:border-indigo-500/30 transition-all text-xs">
+              <div
+                className={`rounded-xl p-3.5 shadow-sm transition-all text-xs border ${
+                  isCompensation
+                    ? 'bg-purple-50/50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/60'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/30'
+                }`}
+              >
                 <div
                   className="flex items-center justify-between cursor-pointer select-none"
                   onClick={() => toggleExpand(idx)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-slate-900 dark:text-slate-100">
                       {step.step}
                     </span>
+
+                    {/* SAGA Compensation Tag */}
+                    {isCompensation && (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 rounded-md font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700">
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        Saga Compensation
+                      </span>
+                    )}
+
                     <span
                       className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold ${
                         isRunning
@@ -100,13 +138,14 @@ export default function ExecutionTimeline({ timeline = [], currentStep = null })
                   <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
                     <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-semibold uppercase tracking-wider">
                       <Terminal className="w-3.5 h-3.5 text-indigo-500" />
-                      <span>Step Diagnostic Payload</span>
+                      <span>{isCompensation ? 'Compensation Action Diagnostics' : 'Step Diagnostic Payload'}</span>
                     </div>
                     <pre className="p-2.5 rounded-lg bg-slate-950 text-slate-200 font-mono text-[10px] overflow-x-auto border border-slate-800">
                       {JSON.stringify(
                         step.details || {
                           step: step.step,
                           status: step.status,
+                          isCompensation: !!isCompensation,
                           executionTimeMs: step.duration,
                           timestamp: step.timestamp,
                           logMessage: step.message,

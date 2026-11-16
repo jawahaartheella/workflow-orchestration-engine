@@ -28,3 +28,24 @@ export async function createApiKey(tenantId: Types.ObjectId, name: string) {
     }
 }
 
+export async function getApiKeysForTenant(tenantId: string) {
+    return ApiKeyModel.find({
+        tenantId: new Types.ObjectId(tenantId)
+    }).sort({ createdAt: -1 });
+}
+
+export async function revokeApiKey(apiKeyId: string, tenantId: string) {
+    return ApiKeyModel.findOneAndUpdate(
+        {
+            _id: apiKeyId,
+            tenantId: new Types.ObjectId(tenantId)
+        },
+        {
+            $set: { status: 'revoked' }
+        },
+        {
+            new: true
+        }
+    );
+}
+

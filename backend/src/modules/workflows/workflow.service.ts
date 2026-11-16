@@ -5,7 +5,9 @@ import { validateWorkflowDefinition } from "./workflow.validator.js";
 
 interface CreateWorkflowInput {
     name: string,
-    description?: string
+    description?: string,
+    nodes?: Workflow['nodes'],
+    edges?: Workflow['edges']
 }
 
 export async function createWorkflow(
@@ -17,8 +19,8 @@ export async function createWorkflow(
         description: input.description ?? '',
         tenantId: new Types.ObjectId(tenantId),
         status: 'DRAFT',
-        nodes: [],
-        edges: []
+        nodes: input.nodes ?? [],
+        edges: input.edges ?? []
     });
 
     return workflow;

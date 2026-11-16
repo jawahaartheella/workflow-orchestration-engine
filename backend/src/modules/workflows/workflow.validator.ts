@@ -1,7 +1,21 @@
-import type { Workflow } from "./workflow.model.js";
+export interface WorkflowGraphDefinition {
+    nodes?: Array<{
+        id: string;
+        type: string;
+        position?: { x: number; y: number } | null;
+        data?: unknown;
+    }>;
+    edges?: Array<{
+        id: string;
+        source: string;
+        target: string;
+        sourceHandle?: string | null;
+        targetHandle?: string | null;
+    }>;
+}
 
 export function validateWorkflowDefinition(
-    workflow: Pick<Workflow, 'nodes' | 'edges'>
+    workflow: WorkflowGraphDefinition
 ): string[] {
     const errors: string[] = [];
 
@@ -29,11 +43,12 @@ export function validateWorkflowDefinition(
         nodeIds.add(node.id);
 
         // 3. Validate node type
-        if(!node.type || typeof node.type !== 'string') {
-            errors.push(`Node ${node.id} must have a valid type`);
+        const allowedTypes = ['trigger', 'start', 'http', 'api', 'task', 'condition', 'delay', 'loop', 'end', 'terminal'];
+        if(!node.type || typeof node.type !== 'string' || !allowedTypes.includes(node.type.toLowerCase())) {
+            errors.push(`Node ${node.id} has invalid type: ${node.type}`);
         }
 
-        // 4. Validate node positon
+        // 4. Validate node position
         if(!node.position || 
             !Number.isFinite(node.position.x) || 
             !Number.isFinite(node.position.y)
@@ -42,11 +57,11 @@ export function validateWorkflowDefinition(
         }
     }
 
-    // 5. Atleast one trigger must exist
-    const hasTrigger = nodes.some(node => node.type === 'trigger');
+    // 5. At least one trigger / start node must exist
+    const hasTrigger = nodes.some(node => node.type === 'trigger' || node.type === 'start');
 
     if(!hasTrigger) {
-        errors.push('Workflow must contain atleast one trigger');
+        errors.push('Workflow must contain at least one start or trigger node');
     }
 
     // 6. Validate Edges

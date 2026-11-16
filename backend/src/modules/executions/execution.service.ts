@@ -33,12 +33,39 @@ export async function startWorkflowExecution(data: StartExecutionInput) {
         status: 'PENDING',
         input: data.input ?? {},
         output: null,
+        nodeExecutions: [],
         startedAt: null,
         completedAt: null,
         error: null
     });
 
-    // 5. Return the newly created execution
+    // 5. Mark execution as RUNNING
+    execution.status = 'RUNNING';
+    execution.startedAt = new Date();
+
+    // 6. Start the execution engine
+    const result = await executeWorkflow(
+        workflow,
+        {
+            executionId: execution._id.toString(),
+            tenantId: data.tenantId,
+            workflowId: workflow._id.toString(),
+            workflowInput: data.input ?? {}
+        }
+    );
+
+    // 7. Save individual node execution results
+    execution.set('nodeExecutions', result.nodeExecutions);
+
+    // 8. Update overall execution status and output
+    execution.status = result.status;
+    execution.output = result.output;
+    execution.error = result.error;
+    execution.completedAt = new Date();
+
+    // 9. Persist final execution details
+    await execution.save();
+
     return execution;
 }
 

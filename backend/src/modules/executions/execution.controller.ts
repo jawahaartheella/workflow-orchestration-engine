@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { Types } from "mongoose";
-import { getExecutionById, getExecutions, startWorkflowExecution } from "./execution.servie.js";
+import { getExecutionById, getExecutions, startWorkflowExecution } from "./execution.service.js";
 
 export const startWorkflowExecutionController: RequestHandler = async (req, res, next) => {
     try {

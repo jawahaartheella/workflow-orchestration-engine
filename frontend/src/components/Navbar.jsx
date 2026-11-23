@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { MOCK_NOTIFICATIONS } from '../data/mockData';
+import { executionService } from '../services/executionService';
 
 export default function Navbar({ onOpenCreateWorkflow }) {
   const navigate = useNavigate();
@@ -29,7 +29,7 @@ export default function Navbar({ onOpenCreateWorkflow }) {
   const [tenantDropdownOpen, setTenantDropdownOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
 
   const tenantMenuRef = useRef(null);
   const profileMenuRef = useRef(null);
@@ -51,6 +51,41 @@ export default function Navbar({ onOpenCreateWorkflow }) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Real-time execution alerts from live backend
+  useEffect(() => {
+    let isMounted = true;
+    async function loadNotifications() {
+      try {
+        const execs = await executionService.getExecutions({ tenantId: activeTenant?.id, limit: 10 });
+        if (Array.isArray(execs) && execs.length > 0 && isMounted) {
+          const notifs = execs.slice(0, 5).map((e) => {
+            const isErr = ['FAILED', 'COMPENSATION_FAILED'].includes(e.status);
+            const isWarn = ['COMPENSATED', 'CANCELLED'].includes(e.status);
+            return {
+              id: `notif_${e.id}`,
+              title: isErr ? 'Pipeline Failed' : isWarn ? 'Saga Compensated' : 'Pipeline Completed',
+              description: `${e.workflowName || 'Workflow'} (${e.id}) completed with status: ${e.status}`,
+              type: isErr ? 'ERROR' : isWarn ? 'WARNING' : 'SUCCESS',
+              timestamp: e.startedAt ? new Date(e.startedAt).toLocaleTimeString() : 'Recently',
+              read: false,
+            };
+          });
+          setNotifications(notifs);
+        } else if (isMounted) {
+          setNotifications([]);
+        }
+      } catch (err) {
+        if (isMounted) setNotifications([]);
+      }
+    }
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [activeTenant]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -98,52 +133,49 @@ export default function Navbar({ onOpenCreateWorkflow }) {
           {tenantDropdownOpen && (
             <div className="absolute left-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-2 z-50 text-xs">
               <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                Switch Organization Context
+                Available Tenant Environments
               </div>
               <div className="py-1 max-h-60 overflow-y-auto space-y-1">
-                {tenants.map((tenant) => {
-                  const isSelected = tenant.id === activeTenant?.id;
-                  return (
-                    <button
-                      key={tenant.id}
-                      onClick={() => {
-                        switchTenant(tenant.id);
-                        setTenantDropdownOpen(false);
-                        navigate('/');
-                      }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-colors ${
-                        isSelected
-                          ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold'
-                          : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <div className="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center font-bold text-xs">
-                          {tenant.name.charAt(0)}
-                        </div>
-                        <div className="truncate">
-                          <div className="truncate font-semibold">{tenant.name}</div>
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {tenant.database}
-                          </span>
+                {tenants.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      switchTenant(t.id);
+                      setTenantDropdownOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left ${
+                      activeTenant?.id === t.id
+                        ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold'
+                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 truncate">
+                      <div className="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-xs shrink-0">
+                        {t.name.charAt(0)}
+                      </div>
+                      <div className="truncate">
+                        <div className="truncate font-medium">{t.name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {t.tier} • {t.strategyBadge || 'Partition'}
                         </div>
                       </div>
-                      {isSelected && <Check className="w-4 h-4 text-indigo-600 shrink-0" />}
-                    </button>
-                  );
-                })}
+                    </div>
+                    {activeTenant?.id === t.id && (
+                      <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    )}
+                  </button>
+                ))}
               </div>
-
-              <div className="mt-1 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                 <button
                   onClick={() => {
                     navigate('/tenants');
                     setTenantDropdownOpen(false);
                   }}
-                  className="w-full flex items-center gap-2 p-2 rounded-xl text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 font-semibold"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-colors font-semibold"
                 >
-                  <Building2 className="w-4 h-4" />
-                  <span>Manage Organizations</span>
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Manage All Tenants</span>
                 </button>
               </div>
             </div>
@@ -151,31 +183,30 @@ export default function Navbar({ onOpenCreateWorkflow }) {
         </div>
       </div>
 
-      {/* Center: Global Search Bar */}
-      <div className="hidden lg:flex items-center max-w-md w-full mx-6">
-        <div className="relative w-full">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Middle: Universal Search Bar */}
+      <div className="flex-1 max-w-md mx-4 hidden lg:block">
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search workflows, executions, nodes, or API keys..."
-            className="w-full pl-9 pr-12 py-2 text-xs bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+            className="w-full pl-9 pr-10 py-1.5 bg-slate-100 dark:bg-slate-950/70 border border-transparent focus:border-indigo-500/50 rounded-xl text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none transition-all"
           />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono bg-white dark:bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-xs">
+          <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] text-slate-400 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
             ⌘K
           </kbd>
         </div>
       </div>
 
-      {/* Right Controls: Create Workflow, Theme Toggle, Notifications, User Menu */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* Create Workflow Primary Action Button */}
+      {/* Right: Actions, Theme, Notifications & User Menu */}
+      <div className="flex items-center gap-2.5">
+        {/* Create Workflow Button */}
         <button
           onClick={onOpenCreateWorkflow}
-          className="flex items-center gap-1.5 py-1.5 px-3 sm:px-4 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Create Workflow</span>
-          <span className="sm:hidden">Create</span>
         </button>
 
         {/* Theme Toggle */}
@@ -216,26 +247,32 @@ export default function Navbar({ onOpenCreateWorkflow }) {
               </div>
 
               <div className="mt-2 divide-y divide-slate-100 dark:divide-slate-800/60 max-h-72 overflow-y-auto space-y-1">
-                {notifications.map((notif) => (
-                  <div
-                    key={notif.id}
-                    className={`p-2.5 rounded-xl transition-colors ${
-                      notif.read ? 'opacity-70' : 'bg-slate-50 dark:bg-slate-800/40'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {notif.title}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {notif.timestamp}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                      {notif.description}
-                    </p>
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-slate-400 text-xs">
+                    No recent notifications
                   </div>
-                ))}
+                ) : (
+                  notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className={`p-2.5 rounded-xl transition-colors ${
+                        notif.read ? 'opacity-70' : 'bg-slate-50 dark:bg-slate-800/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {notif.title}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {notif.timestamp}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        {notif.description}
+                      </p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -248,7 +285,7 @@ export default function Navbar({ onOpenCreateWorkflow }) {
             className="flex items-center gap-2 p-1 pl-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-              {currentUser?.initials || 'AM'}
+              {currentUser?.initials || (activeTenant?.name ? activeTenant.name.charAt(0) : 'AM')}
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block mr-1" />
           </button>
@@ -257,13 +294,13 @@ export default function Navbar({ onOpenCreateWorkflow }) {
             <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 z-50 text-xs">
               <div className="p-3 border-b border-slate-100 dark:border-slate-800">
                 <div className="font-bold text-slate-900 dark:text-white">
-                  {currentUser?.name || 'Alex Morgan'}
+                  {currentUser?.name || activeTenant?.name || 'Platform Admin'}
                 </div>
                 <div className="text-[11px] text-slate-400 truncate">
-                  {currentUser?.email || 'alex.morgan@acme.com'}
+                  {currentUser?.email || (activeTenant ? `admin@${activeTenant.slug || 'company'}.com` : 'admin@flowforge.dev')}
                 </div>
                 <span className="mt-1.5 inline-block text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/40 font-semibold">
-                  Role: {currentUser?.role || 'Owner'}
+                  Role: {currentUser?.role || 'Admin'}
                 </span>
               </div>
 
@@ -278,37 +315,22 @@ export default function Navbar({ onOpenCreateWorkflow }) {
                   <Settings className="w-4 h-4 text-slate-400" />
                   <span>Account & Settings</span>
                 </button>
-
                 <button
                   onClick={() => {
-                    navigate('/api-keys');
+                    navigate('/apikeys');
                     setProfileDropdownOpen(false);
                   }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   <Key className="w-4 h-4 text-slate-400" />
-                  <span>API Key Secrets</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    navigate('/tenants');
-                    setProfileDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <Building2 className="w-4 h-4 text-slate-400" />
-                  <span>Team & Organizations</span>
+                  <span>API Keys</span>
                 </button>
               </div>
 
               <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
                 <button
-                  onClick={() => {
-                    logout();
-                    navigate('/login');
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors font-semibold"
+                  onClick={logout}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors font-medium"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Sign Out</span>

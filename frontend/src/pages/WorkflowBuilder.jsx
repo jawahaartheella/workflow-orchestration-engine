@@ -31,7 +31,6 @@ import { workflowService } from '../services/workflowService';
 import { executionService } from '../services/executionService';
 import { socketService } from '../services/socketService';
 import { useAuth } from '../context/AuthContext';
-import { MOCK_TEMPLATES } from '../data/mockData';
 
 const BLANK_CANVAS_NODES = [
   {

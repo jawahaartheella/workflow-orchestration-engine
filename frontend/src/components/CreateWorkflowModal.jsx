@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Sparkles, Layers, ArrowRight, GitBranch, ShoppingCart, Repeat } from 'lucide-react';
 import Modal from './Modal';
-import { MOCK_TEMPLATES } from '../data/mockData';
 import { workflowService } from '../services/workflowService';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,7 +12,28 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('blank');
+  const [templates, setTemplates] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadTemplates() {
+      try {
+        const list = await workflowService.getTemplates();
+        if (isMounted && Array.isArray(list)) {
+          setTemplates(list);
+        }
+      } catch (err) {
+        console.warn('Failed to load templates:', err);
+      }
+    }
+    if (isOpen) {
+      loadTemplates();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -40,7 +60,7 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
         ];
         initialEdges = [];
       } else {
-        const found = MOCK_TEMPLATES.find((t) => t.id === selectedTemplateId);
+        const found = templates.find((t) => t.id === selectedTemplateId);
         if (found) {
           initialNodes = found.nodes || [];
           initialEdges = found.edges || [];
@@ -111,7 +131,7 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
             Start From Blueprint Template
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Template 1: Blank (Default) */}
+            {/* Blank Option */}
             <div
               onClick={() => setSelectedTemplateId('blank')}
               className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
@@ -133,49 +153,34 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
               </p>
             </div>
 
-            {/* Template 2: Ecommerce */}
-            <div
-              onClick={() => setSelectedTemplateId('template_ecommerce')}
-              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
-                selectedTemplateId === 'template_ecommerce'
-                  ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-lg bg-slate-700 text-white flex items-center justify-center font-bold">
-                  <ShoppingCart className="w-3.5 h-3.5" />
+            {/* Backend Templates */}
+            {templates.map((tpl) => (
+              <div
+                key={tpl.id}
+                onClick={() => setSelectedTemplateId(tpl.id)}
+                className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                  selectedTemplateId === tpl.id
+                    ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20'
+                    : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded-lg bg-slate-700 text-white flex items-center justify-center font-bold">
+                    {tpl.id.includes('ecommerce') ? (
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                    ) : (
+                      <Repeat className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                  <span className="font-bold text-slate-900 dark:text-white truncate">
+                    {tpl.name}
+                  </span>
                 </div>
-                <span className="font-bold text-slate-900 dark:text-white truncate">
-                  E-Commerce Fraud
-                </span>
+                <p className="text-[11px] text-slate-400 line-clamp-2">
+                  {tpl.description}
+                </p>
               </div>
-              <p className="text-[11px] text-slate-400 line-clamp-2">
-                Webhook ingress, credit score check, conditional branching.
-              </p>
-            </div>
-
-            {/* Template 3: Batch Sync */}
-            <div
-              onClick={() => setSelectedTemplateId('template_batch_sync')}
-              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
-                selectedTemplateId === 'template_batch_sync'
-                  ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-lg bg-orange-600 text-white flex items-center justify-center font-bold">
-                  <Repeat className="w-3.5 h-3.5" />
-                </div>
-                <span className="font-bold text-slate-900 dark:text-white truncate">
-                  Batch Sync Loop
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 line-clamp-2">
-                Cron schedule, REST fetch, throttled delay & database upsert.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -183,7 +188,7 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="py-2 px-4 rounded-xl border border-slate-200 dark:border-slate-800 font-semibold"
+            className="py-2 px-4 rounded-xl border border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             Cancel
           </button>

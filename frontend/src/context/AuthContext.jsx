@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../services/api';
-import { MOCK_TENANTS } from '../data/mockData';
 
 const AuthContext = createContext(null);
 
@@ -16,17 +15,11 @@ export function AuthProvider({ children }) {
   const [activeTenant, setActiveTenant] = useState(() => {
     try {
       const saved = localStorage.getItem('wf_active_tenant_data');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.name) {
-          const fallback = MOCK_TENANTS.find((m) => m.slug === parsed.slug || m.id === parsed.id) || MOCK_TENANTS[0];
-          return { ...fallback, ...parsed };
-        }
-      }
+      if (saved) return JSON.parse(saved);
     } catch {
       // ignore
     }
-    return MOCK_TENANTS[0];
+    return null;
   });
 
   const [tenants, setTenants] = useState([]);
@@ -46,9 +39,7 @@ export function AuthProvider({ children }) {
       });
 
       if (res && res.data && res.data.tenant) {
-        const fallback = MOCK_TENANTS.find((m) => m.slug === res.data.tenant.slug || m.id === res.data.tenant.id) || MOCK_TENANTS[0];
         const tenantData = {
-          ...fallback,
           ...res.data.tenant,
           id: res.data.tenant.id || res.data.tenant._id,
         };
@@ -77,29 +68,32 @@ export function AuthProvider({ children }) {
       const res = await apiClient.get('/auth/tenants');
       const tenantList = res?.data || (Array.isArray(res) ? res : []);
       if (Array.isArray(tenantList) && tenantList.length > 0) {
-        const mapped = tenantList.map((t) => {
-          const fallback = MOCK_TENANTS.find((m) => m.slug === t.slug || m.id === (t._id || t.id)) || {};
-          return {
-            ...fallback,
-            ...t,
-            id: t._id || t.id,
-          };
-        });
+        const mapped = tenantList.map((t) => ({
+          ...t,
+          id: t._id || t.id,
+        }));
         setTenants(mapped);
+        setActiveTenant((current) => {
+          if (!current && mapped.length > 0) {
+            localStorage.setItem('wf_active_tenant_data', JSON.stringify(mapped[0]));
+            localStorage.setItem('wf_active_tenant', mapped[0].id);
+            return mapped[0];
+          }
+          return current;
+        });
       } else {
-        setTenants(MOCK_TENANTS);
+        setTenants([]);
       }
-    } catch {
-      setTenants(MOCK_TENANTS);
+    } catch (err) {
+      console.warn('Failed to fetch tenants from backend:', err);
+      setTenants([]);
     }
   }, []);
 
   const switchTenant = useCallback(async (tenantId) => {
     const selected = tenants.find((t) => t.id === tenantId || t._id === tenantId || t.slug === tenantId);
     if (selected) {
-      const fallback = MOCK_TENANTS.find((m) => m.slug === selected.slug || m.id === selected.id) || MOCK_TENANTS[0];
       const tenantData = {
-        ...fallback,
         ...selected,
         id: selected.id || selected._id,
       };

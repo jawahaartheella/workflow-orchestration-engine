@@ -1,31 +1,4 @@
 import apiClient from './api';
-import { MOCK_WORKFLOWS, MOCK_TEMPLATES } from '../data/mockData';
-
-const WORKFLOWS_STORAGE_KEY = 'wf_workflows_cache';
-
-/**
- * Initialize cache with mock workflows if empty
- */
-function getCachedWorkflows() {
-  try {
-    const raw = localStorage.getItem(WORKFLOWS_STORAGE_KEY);
-    if (raw) {
-      return JSON.parse(raw);
-    }
-  } catch (err) {
-    console.warn('Failed to parse cached workflows, resetting to defaults', err);
-  }
-  localStorage.setItem(WORKFLOWS_STORAGE_KEY, JSON.stringify(MOCK_WORKFLOWS));
-  return MOCK_WORKFLOWS;
-}
-
-function setCachedWorkflows(workflows) {
-  try {
-    localStorage.setItem(WORKFLOWS_STORAGE_KEY, JSON.stringify(workflows));
-  } catch (err) {
-    console.warn('Failed to persist workflows to localStorage', err);
-  }
-}
 
 export const workflowService = {
   /**
@@ -55,9 +28,32 @@ export const workflowService = {
   },
 
   /**
-   * Get single workflow by ID
+   * Get single workflow by ID or template ID
    */
   async getWorkflowById(id) {
+    if (!id) return null;
+
+    if (typeof id === 'string' && id.startsWith('template_')) {
+      try {
+        const res = await apiClient.get(`/workflows/templates/${id}`);
+        const tpl = res?.data || res;
+        if (tpl && typeof tpl === 'object') {
+          return {
+            ...tpl,
+            id: tpl.id,
+            _id: tpl.id,
+            status: 'DRAFT',
+            version: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+      } catch (err) {
+        console.error(`Failed to fetch workflow template ${id} from backend:`, err);
+        return null;
+      }
+    }
+
     try {
       const res = await apiClient.get(`/workflows/${id}`);
       const wf = res?.data || res;
@@ -73,20 +69,7 @@ export const workflowService = {
       return null;
     } catch (err) {
       console.error(`Failed to fetch workflow ${id} from backend:`, err);
-      // If not in database, check mock templates as fallback for template browsing
-      const template = MOCK_TEMPLATES.find((t) => t.id === id);
-      if (template) {
-        return {
-          ...template,
-          id: template.id,
-          _id: template.id,
-          status: 'DRAFT',
-          version: 1,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      throw err;
+      return null;
     }
   },
 
@@ -164,10 +147,16 @@ export const workflowService = {
   },
 
   /**
-   * Fetch templates
+   * Fetch templates from backend API
    */
-  getTemplates() {
-    return MOCK_TEMPLATES;
+  async getTemplates() {
+    try {
+      const res = await apiClient.get('/workflows/templates');
+      return res?.data || (Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Failed to fetch templates from backend:', err);
+      return [];
+    }
   },
 };
 

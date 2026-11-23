@@ -22,6 +22,30 @@ function setCachedExecutions(executions) {
   }
 }
 
+function formatExecution(record) {
+  if (!record) return null;
+
+  const timeline = (record.nodeExecutions || []).map((node) => {
+    const durationMs = (node.startedAt && node.completedAt)
+      ? Math.max(1, new Date(node.completedAt) - new Date(node.startedAt))
+      : 0;
+
+    return {
+      step: `${node.nodeId} (${node.nodeType})`,
+      status: node.status,
+      duration: `${durationMs}ms`,
+      timestamp: node.startedAt ? new Date(node.startedAt).toLocaleTimeString() : '',
+      message: node.error || (node.output ? JSON.stringify(node.output) : 'Step evaluated successfully'),
+    };
+  });
+
+  return {
+    ...record,
+    id: record._id || record.id,
+    timeline: (record.timeline && record.timeline.length > 0) ? record.timeline : timeline,
+  };
+}
+
 export const executionService = {
   /**
    * Get executions list with optional filters
@@ -29,36 +53,12 @@ export const executionService = {
   async getExecutions(filters = {}) {
     try {
       const res = await apiClient.get('/executions', { params: filters });
-      if (res && Array.isArray(res.data)) return res.data;
-    } catch {
-      // Graceful fallback
+      const items = res?.data || (Array.isArray(res) ? res : []);
+      return items.map(formatExecution);
+    } catch (err) {
+      console.error('Failed to fetch executions from backend:', err);
+      return [];
     }
-
-    let all = getCachedExecutions();
-
-    if (filters.status && filters.status !== 'ALL') {
-      all = all.filter((e) => e.status.toUpperCase() === filters.status.toUpperCase());
-    }
-
-    if (filters.workflowId) {
-      all = all.filter((e) => e.workflowId === filters.workflowId);
-    }
-
-    if (filters.tenantId && filters.tenantId !== 'all') {
-      all = all.filter((e) => e.tenantId === filters.tenantId || e.tenantId === 'acme_corp');
-    }
-
-    if (filters.search) {
-      const term = filters.search.toLowerCase();
-      all = all.filter(
-        (e) =>
-          e.id.toLowerCase().includes(term) ||
-          e.workflowName.toLowerCase().includes(term) ||
-          e.trigger.toLowerCase().includes(term)
-      );
-    }
-
-    return all;
   },
 
   /**
@@ -67,61 +67,29 @@ export const executionService = {
   async getExecutionById(id) {
     try {
       const res = await apiClient.get(`/executions/${id}`);
-      if (res && res.data) return res.data;
-    } catch {
-      // Fallback
+      return formatExecution(res?.data || res);
+    } catch (err) {
+      console.error(`Failed to fetch execution ${id}:`, err);
+      const all = getCachedExecutions();
+      return all.find((e) => e.id === id) || null;
     }
-
-    const all = getCachedExecutions();
-    return all.find((e) => e.id === id) || all[0];
   },
 
   /**
    * Start a new execution for a workflow
    */
   async triggerExecution(workflow, payload = {}) {
+    const targetId = workflow._id || workflow.id;
     try {
-      const res = await apiClient.post(`/workflows/${workflow.id}/execute`, { payload });
-      if (res && res.data) return res.data;
-    } catch {
-      // Fallback
+      // Backend expects { input: { ... } }
+      const res = await apiClient.post(`/workflows/${targetId}/execute`, {
+        input: payload
+      });
+      return formatExecution(res?.data || res);
+    } catch (err) {
+      console.error('Failed to trigger execution:', err);
+      throw err;
     }
-
-    const all = getCachedExecutions();
-    const newExec = {
-      id: `exec_live_${Math.random().toString(16).substring(2, 10)}`,
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      tenantId: workflow.tenantId || localStorage.getItem('wf_active_tenant') || 'acme_corp',
-      tenantName: 'Active Organization',
-      status: 'RUNNING',
-      trigger: 'Manual Console Trigger',
-      startedAt: new Date().toISOString(),
-      completedAt: null,
-      durationMs: 0,
-      currentNode: workflow.nodes?.[0]?.id || 'start',
-      progress: 10,
-      payload: Object.keys(payload).length > 0 ? payload : {
-        orderId: `ORD-${Math.floor(10000 + Math.random() * 90000)}`,
-        amount: 850.00,
-        currency: 'USD',
-        riskScore: 0.15,
-        timestamp: new Date().toISOString()
-      },
-      timeline: [
-        {
-          step: workflow.nodes?.[0]?.data?.label || 'Trigger Node',
-          status: 'COMPLETED',
-          duration: '10ms',
-          timestamp: new Date().toLocaleTimeString(),
-          message: 'Execution spawned from developer canvas',
-        },
-      ],
-    };
-
-    all.unshift(newExec);
-    setCachedExecutions(all);
-    return newExec;
   },
 
   /**

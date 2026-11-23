@@ -4,19 +4,30 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tsx src/tests/sprint1-auth-alignment.test.ts && tsx src/tests/sprint2-saga-nodes.test.ts && tsx src/tests/sprint3-queue-worker.test.ts && tsx src/tests/sprint4-e2e.test.ts",
+    "test:sprint1": "tsx src/tests/sprint1-auth-alignment.test.ts",
+    "test:sprint2": "tsx src/tests/sprint2-saga-nodes.test.ts",
+    "test:sprint3": "tsx src/tests/sprint3-queue-worker.test.ts",
+    "test:sprint4": "tsx src/tests/sprint4-e2e.test.ts",
+    "worker": "tsx src/worker.ts",
+    "seed": "tsx src/seed-demo-saga.ts",
+    "build": "tsc --noEmit",
     "dev": "tsx watch src/server.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
+    "bullmq": "^6.7.6",
+    "cors": "^2.8.6",
     "dotenv": "^18.0.8",
     "express": "^5.3.0",
+    "ioredis": "^6.0.0",
     "mongoose": "^9.11.2"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
     "tsx": "^4.23.15",

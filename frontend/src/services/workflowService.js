@@ -31,20 +31,23 @@ export const workflowService = {
   /**
    * Get all workflows for current tenant
    */
-  async getWorkflows(tenantId) {
+  async getWorkflows() {
     try {
-      // Prepared for actual backend API
       const res = await apiClient.get('/workflows');
-      if (res && Array.isArray(res.data)) {
-        return res.data;
-      }
-    } catch {
-      // Graceful fallback to client-side multi-tenant cache
+      const items = res?.data || (Array.isArray(res) ? res : []);
+      if (!Array.isArray(items)) return [];
+      return items.map((w) => ({
+        ...w,
+        id: w._id || w.id,
+        status: (w.status || 'ACTIVE').toUpperCase(),
+        tags: Array.isArray(w.tags) ? w.tags : ['orchestration', 'dag'],
+        totalExecutions: w.totalExecutions || 0,
+        triggerType: w.triggerType || w.nodes?.find((n) => n.type === 'trigger' || n.type === 'start')?.data?.config?.triggerType || 'webhook',
+      }));
+    } catch (err) {
+      console.error('Failed to fetch workflows from backend:', err);
+      return [];
     }
-
-    const all = getCachedWorkflows();
-    if (!tenantId || tenantId === 'all') return all;
-    return all.filter((w) => w.tenantId === tenantId || w.tenantId === 'acme_corp');
   },
 
   /**
@@ -53,130 +56,89 @@ export const workflowService = {
   async getWorkflowById(id) {
     try {
       const res = await apiClient.get(`/workflows/${id}`);
-      if (res && res.data) return res.data;
-    } catch {
-      // Fallback
+      const wf = res?.data || res;
+      if (wf && typeof wf === 'object') {
+        return {
+          ...wf,
+          id: wf._id || wf.id,
+          status: (wf.status || 'ACTIVE').toUpperCase(),
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error(`Failed to fetch workflow ${id} from backend:`, err);
+      // If not in database, check mock templates as fallback for template browsing
+      const template = MOCK_TEMPLATES.find((t) => t.id === id);
+      if (template) {
+        return {
+          ...template,
+          status: 'DRAFT',
+          version: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      throw err;
     }
-
-    const all = getCachedWorkflows();
-    const found = all.find((w) => w.id === id);
-    if (found) return found;
-
-    // Check templates if not found in saved
-    const template = MOCK_TEMPLATES.find((t) => t.id === id);
-    if (template) {
-      return {
-        ...template,
-        tenantId: localStorage.getItem('wf_active_tenant') || 'acme_corp',
-        status: 'DRAFT',
-        version: '1.0.0',
-        totalExecutions: 0,
-        successRate: 100,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    return null;
   },
 
   /**
    * Save or update workflow
    */
   async saveWorkflow(workflow) {
-    try {
-      const res = await apiClient.post('/workflows', workflow);
-      if (res && res.data) return res.data;
-    } catch {
-      // Fallback
-    }
+    const isExistingBackendId = workflow._id || (workflow.id && /^[0-9a-fA-F]{24}$/.test(workflow.id));
+    const targetId = workflow._id || workflow.id;
 
-    const all = getCachedWorkflows();
-    const now = new Date().toISOString();
-    let updated;
+    const payload = {
+      name: workflow.name,
+      description: workflow.description || '',
+      nodes: workflow.nodes || [],
+      edges: workflow.edges || [],
+    };
 
-    const existingIndex = all.findIndex((w) => w.id === workflow.id);
-    if (existingIndex >= 0) {
-      updated = {
-        ...all[existingIndex],
-        ...workflow,
-        updatedAt: now,
-      };
-      all[existingIndex] = updated;
+    if (isExistingBackendId) {
+      // Update existing workflow
+      const res = await apiClient.patch(`/workflows/${targetId}`, payload);
+      return res?.data || res;
     } else {
-      updated = {
-        ...workflow,
-        id: workflow.id || `wf_${Date.now().toString(36)}`,
-        tenantId: workflow.tenantId || localStorage.getItem('wf_active_tenant') || 'acme_corp',
-        status: workflow.status || 'DRAFT',
-        version: workflow.version || '1.0.0',
-        totalExecutions: workflow.totalExecutions || 0,
-        successRate: workflow.successRate || 100,
-        createdAt: now,
-        updatedAt: now,
-        nodes: workflow.nodes || [],
-        edges: workflow.edges || [],
-      };
-      all.unshift(updated);
+      // Create new workflow
+      const res = await apiClient.post('/workflows', payload);
+      return res?.data || res;
     }
-
-    setCachedWorkflows(all);
-    return updated;
   },
 
   /**
    * Delete workflow
    */
   async deleteWorkflow(id) {
-    try {
-      await apiClient.delete(`/workflows/${id}`);
-    } catch {
-      // Fallback
-    }
-
-    const all = getCachedWorkflows();
-    const filtered = all.filter((w) => w.id !== id);
-    setCachedWorkflows(filtered);
-    return true;
+    const res = await apiClient.delete(`/workflows/${id}`);
+    return res?.data || true;
   },
 
   /**
    * Duplicate workflow
    */
   async duplicateWorkflow(id) {
-    const all = getCachedWorkflows();
-    const source = all.find((w) => w.id === id);
+    const source = await this.getWorkflowById(id);
     if (!source) throw new Error('Workflow not found to duplicate');
 
-    const duplicate = {
-      ...source,
-      id: `wf_${Date.now().toString(36)}`,
+    const res = await apiClient.post('/workflows', {
       name: `${source.name} (Copy)`,
-      status: 'DRAFT',
-      totalExecutions: 0,
-      successRate: 100,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastExecutedAt: null,
-    };
+      description: source.description || '',
+      nodes: source.nodes || [],
+      edges: source.edges || [],
+    });
 
-    all.unshift(duplicate);
-    setCachedWorkflows(all);
-    return duplicate;
+    return res?.data || res;
   },
 
   /**
-   * Toggle workflow status (ACTIVE <-> PAUSED)
+   * Toggle workflow status (ACTIVE <-> INACTIVE)
    */
-  async toggleWorkflowStatus(id) {
-    const all = getCachedWorkflows();
-    const target = all.find((w) => w.id === id);
-    if (!target) return null;
-
-    target.status = target.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-    target.updatedAt = new Date().toISOString();
-    setCachedWorkflows(all);
-    return target;
+  async toggleWorkflowStatus(id, currentStatus) {
+    const targetStatus = currentStatus === 'ACTIVE' ? 'deactivate' : 'activate';
+    const res = await apiClient.patch(`/workflows/${id}/${targetStatus}`);
+    return res?.data || res;
   },
 
   /**

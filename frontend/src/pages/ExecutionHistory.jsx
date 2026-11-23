@@ -15,6 +15,8 @@ import {
   AlertCircle,
   Copy,
   Calendar,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 
 import DataTable from '../components/DataTable';
@@ -30,17 +32,27 @@ export default function ExecutionHistory() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedLogExec, setSelectedLogExec] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadData = async () => {
-    const list = await executionService.getExecutions({
-      status: statusFilter,
-      tenantId: activeTenant?.id,
-    });
-    setExecutions(list);
+    try {
+      setIsRefreshing(true);
+      const list = await executionService.getExecutions({
+        status: statusFilter,
+        tenantId: activeTenant?.id,
+      });
+      setExecutions(list || []);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(() => {
+      loadData();
+    }, 3000);
+    return () => clearInterval(interval);
   }, [statusFilter, activeTenant]);
 
   const handleRetry = async (id) => {
@@ -63,9 +75,13 @@ export default function ExecutionHistory() {
   };
 
   const statusBadges = {
+    PENDING: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
     RUNNING: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/50',
     COMPLETED: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50',
     FAILED: 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800/50',
+    COMPENSATING: 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800/50 animate-pulse',
+    COMPENSATED: 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/50',
+    COMPENSATION_FAILED: 'bg-red-100 dark:bg-red-950/70 text-red-700 dark:text-red-400 border-red-300 dark:border-red-800',
     PAUSED: 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/50',
     CANCELLED: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
   };
@@ -123,26 +139,37 @@ export default function ExecutionHistory() {
       ),
     },
     {
-      header: 'Status',
+      header: 'Status & Protocol',
       key: 'status',
       sortable: true,
       render: (row) => (
-        <span
-          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
-            statusBadges[row.status] || statusBadges.RUNNING
-          }`}
-        >
+        <div className="flex flex-col gap-1 items-start">
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              row.status === 'RUNNING'
-                ? 'bg-indigo-500 animate-pulse'
-                : row.status === 'COMPLETED'
-                ? 'bg-emerald-500'
-                : 'bg-rose-500'
+            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+              statusBadges[row.status] || statusBadges.RUNNING
             }`}
-          />
-          {row.status}
-        </span>
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                row.status === 'RUNNING' || row.status === 'COMPENSATING'
+                  ? 'bg-indigo-500 animate-pulse'
+                  : row.status === 'COMPLETED'
+                  ? 'bg-emerald-500'
+                  : row.status === 'COMPENSATED'
+                  ? 'bg-amber-500'
+                  : 'bg-rose-500'
+              }`}
+            />
+            {row.status}
+          </span>
+
+          {row.isSaga && (
+            <span className="inline-flex items-center gap-1 text-[9px] font-mono px-2 py-0.5 rounded-md font-bold uppercase tracking-wider bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
+              <Zap className="w-2.5 h-2.5 text-purple-500" />
+              SAGA: {row.sagaStatus || 'ACTIVE'}
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -186,7 +213,7 @@ export default function ExecutionHistory() {
             <FileCode className="w-3.5 h-3.5" />
           </button>
 
-          {row.status === 'RUNNING' ? (
+          {row.status === 'RUNNING' && (
             <button
               onClick={() => handleCancel(row.id)}
               title="Cancel Execution"
@@ -194,7 +221,9 @@ export default function ExecutionHistory() {
             >
               <StopCircle className="w-3.5 h-3.5" />
             </button>
-          ) : (
+          )}
+
+          {['FAILED', 'COMPENSATED', 'CANCELLED'].includes(row.status) && (
             <button
               onClick={() => handleRetry(row.id)}
               title="Retry Execution"
@@ -217,25 +246,36 @@ export default function ExecutionHistory() {
             Execution History
           </h1>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Audit logs and execution traces across tenant workers and clusters.
+            Audit logs, Saga distributed state machines, and execution traces across tenant workers.
           </p>
         </div>
 
-        {/* Status Filter Tabs */}
-        <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-xs shadow-xs self-start sm:self-auto">
-          {['ALL', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${
-                statusFilter === st
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              {st}
-            </button>
-          ))}
+        {/* Status Filter Tabs & Refresh */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => loadData()}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-1.5 text-xs font-semibold"
+            title="Refresh list"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+
+          <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-xs shadow-xs">
+            {['ALL', 'RUNNING', 'COMPLETED', 'FAILED', 'COMPENSATED', 'CANCELLED'].map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${
+                  statusFilter === st
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

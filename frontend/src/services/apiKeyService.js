@@ -38,31 +38,41 @@ export const apiKeyService = {
   /**
    * Get all keys for active tenant
    */
-  async getApiKeys(tenantId) {
+  async getApiKeys() {
     try {
-      const res = await apiClient.get('/keys');
-      if (res && Array.isArray(res.data)) return res.data;
+      const res = await apiClient.get('/api-keys');
+      if (res && res.data) {
+        return Array.isArray(res.data) ? res.data : [];
+      }
+      return [];
     } catch {
-      // Fallback
+      const all = getCachedKeys();
+      return all;
     }
-
-    const all = getCachedKeys();
-    if (!tenantId || tenantId === 'all') return all;
-    return all.filter((k) => k.tenantId === tenantId || k.tenantId === 'acme_corp');
   },
 
   /**
    * Generate a new cryptographic API key
    */
-  async generateApiKey({ name, scopes = ['workflows:read', 'workflows:execute'], environment = 'production', tenantId }) {
+  async generateApiKey({ name }) {
     try {
-      const res = await apiClient.post('/keys', { name, scopes, environment });
-      if (res && res.data) return res.data;
+      const res = await apiClient.post('/api-keys', { name });
+      if (res && res.data) {
+        return {
+          id: res.data.id,
+          name: res.data.name,
+          fullKey: res.data.secret,
+          keyMasked: res.data.secret ? `${res.data.secret.substring(0, 8)}••••••••••••` : '••••••••',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          lastUsedAt: 'Never',
+        };
+      }
     } catch {
       // Fallback
     }
 
-    const tenant = tenantId || localStorage.getItem('wf_active_tenant') || 'acme_corp';
+    const tenant = localStorage.getItem('wf_active_tenant') || 'acme_corp';
     const entropy = generateCryptoRandomString(16);
     const checksum = generateCryptoRandomString(2);
     const fullKey = `wk_live_${tenant}_${entropy}.${checksum}`;
@@ -75,12 +85,11 @@ export const apiKeyService = {
       keyMasked,
       fullKey, // Returned once for user copy
       tenantId: tenant,
-      scopes,
+      scopes: ['workflows:read', 'workflows:execute'],
       status: 'ACTIVE',
       createdAt: new Date().toISOString(),
       lastUsedAt: 'Never',
       usageCount: 0,
-      environment,
     };
 
     const all = getCachedKeys();
@@ -95,7 +104,8 @@ export const apiKeyService = {
    */
   async revokeApiKey(id) {
     try {
-      await apiClient.delete(`/keys/${id}`);
+      const res = await apiClient.delete(`/api-keys/${id}`);
+      return res?.data || true;
     } catch {
       // Fallback
     }

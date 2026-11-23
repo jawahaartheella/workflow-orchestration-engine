@@ -27,7 +27,7 @@ import { executionService } from '../services/executionService';
 
 export default function Workflows({ onOpenCreateWorkflow }) {
   const navigate = useNavigate();
-  const { activeTenant } = useAuth();
+  const { activeTenant, apiKey } = useAuth();
 
   const [workflows, setWorkflows] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -39,14 +39,20 @@ export default function Workflows({ onOpenCreateWorkflow }) {
   // Load workflows
   const loadWorkflows = async () => {
     setLoading(true);
-    const data = await workflowService.getWorkflows(activeTenant?.id);
-    setWorkflows(data);
-    setLoading(false);
+    try {
+      const data = await workflowService.getWorkflows(activeTenant?.id);
+      setWorkflows(data || []);
+    } catch (err) {
+      console.error('Failed to load workflows in Workflows page:', err);
+      setWorkflows([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadWorkflows();
-  }, [activeTenant]);
+  }, [activeTenant, apiKey]);
 
   // Handlers
   const handleEdit = (wf) => {
@@ -193,7 +199,7 @@ export default function Workflows({ onOpenCreateWorkflow }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredWorkflows.map((wf) => (
             <WorkflowCard
-              key={wf.id}
+              key={wf.id || wf._id}
               workflow={wf}
               onEdit={handleEdit}
               onDuplicate={handleDuplicate}
@@ -240,7 +246,7 @@ export default function Workflows({ onOpenCreateWorkflow }) {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {filteredWorkflows.map((wf) => (
                 <tr
-                  key={wf.id}
+                  key={wf.id || wf._id}
                   className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
                 >
                   <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-white">

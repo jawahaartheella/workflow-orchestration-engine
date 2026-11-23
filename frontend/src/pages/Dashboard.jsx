@@ -46,18 +46,86 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
   const [workflows, setWorkflows] = useState([]);
   const [executions, setExecutions] = useState([]);
   const [chartTimeframe, setChartTimeframe] = useState('7d');
+  const [stats, setStats] = useState({
+    totalWorkflows: 0,
+    activeWorkflows: 0,
+    totalExecutions: 0,
+    successRate: '100.0',
+    failedExecutions: 0,
+  });
+  const [nodeDistribution, setNodeDistribution] = useState(MOCK_STATISTICS.nodeExecutionDistribution);
 
   useEffect(() => {
     async function loadData() {
-      const wfList = await workflowService.getWorkflows(activeTenant?.id);
-      const execList = await executionService.getExecutions({ tenantId: activeTenant?.id });
-      setWorkflows(wfList.slice(0, 5));
-      setExecutions(execList.slice(0, 6));
+      try {
+        const wfList = await workflowService.getWorkflows(activeTenant?.id);
+        const execList = await executionService.getExecutions({ tenantId: activeTenant?.id });
+
+        const safeWfs = Array.isArray(wfList) ? wfList : [];
+        const safeExecs = Array.isArray(execList) ? execList : [];
+
+        setWorkflows(safeWfs);
+        setExecutions(safeExecs);
+
+        const totalWf = safeWfs.length;
+        const activeWf = safeWfs.filter((w) => w.status === 'ACTIVE').length;
+        const totalEx = safeExecs.length;
+        const failedEx = safeExecs.filter((e) =>
+          ['FAILED', 'COMPENSATION_FAILED', 'COMPENSATED'].includes(e.status)
+        ).length;
+        const successEx = safeExecs.filter((e) => e.status === 'COMPLETED').length;
+        const rate = totalEx > 0 ? ((successEx / totalEx) * 100).toFixed(1) : '100.0';
+
+        setStats({
+          totalWorkflows: totalWf,
+          activeWorkflows: activeWf,
+          totalExecutions: totalEx,
+          successRate: rate,
+          failedExecutions: failedEx,
+        });
+
+        // Compute actual node breakdown from real workflow definitions
+        if (safeWfs.length > 0) {
+          const counts = {};
+          let totalNodes = 0;
+          safeWfs.forEach((wf) => {
+            (wf.nodes || []).forEach((node) => {
+              const type = node.type || 'task';
+              counts[type] = (counts[type] || 0) + 1;
+              totalNodes++;
+            });
+          });
+
+          if (totalNodes > 0) {
+            const palette = {
+              task: { name: 'Task Runner', color: '#6366f1' },
+              condition: { name: 'Conditions', color: '#f59e0b' },
+              api: { name: 'API Request', color: '#06b6d4' },
+              http: { name: 'HTTP Client', color: '#0ea5e9' },
+              start: { name: 'Triggers', color: '#10b981' },
+              trigger: { name: 'Triggers', color: '#10b981' },
+              end: { name: 'Terminal Nodes', color: '#8b5cf6' },
+            };
+
+            const dist = Object.entries(counts).map(([type, cnt]) => {
+              const meta = palette[type] || { name: type, color: '#94a3b8' };
+              return {
+                name: meta.name,
+                value: Math.round((cnt / totalNodes) * 100),
+                color: meta.color,
+              };
+            });
+            setNodeDistribution(dist);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load telemetry stats from backend:', err);
+      }
     }
     loadData();
+    const interval = setInterval(loadData, 4000);
+    return () => clearInterval(interval);
   }, [activeTenant]);
-
-  const activeCount = workflows.filter((w) => w.status === 'ACTIVE').length;
 
   const chartData =
     chartTimeframe === '24h'
@@ -84,7 +152,7 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate('/executions/live')}
+            onClick={() => navigate('/executions')}
             className="flex items-center gap-2 py-2 px-3.5 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors shadow-xs"
           >
             <Activity className="w-4 h-4 text-emerald-500 animate-pulse" />
@@ -105,42 +173,42 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title="Total Workflows"
-          value={MOCK_STATISTICS.totalWorkflows}
-          change="+14.2%"
+          value={stats.totalWorkflows}
+          change={stats.totalWorkflows > 0 ? `${stats.totalWorkflows} registered` : '0 registered'}
           changeType="positive"
           icon={GitBranch}
           color="indigo"
         />
         <StatCard
           title="Active Pipelines"
-          value={MOCK_STATISTICS.activeWorkflows}
-          change="+8.5%"
+          value={stats.activeWorkflows}
+          change={`${stats.activeWorkflows} active`}
           changeType="positive"
           icon={Zap}
           color="emerald"
         />
         <StatCard
           title="Total Executions"
-          value={(MOCK_STATISTICS.totalExecutions).toLocaleString()}
-          change="+24.1%"
+          value={stats.totalExecutions.toLocaleString()}
+          change={`${stats.totalExecutions} total runs`}
           changeType="positive"
           icon={PlayCircle}
           color="cyan"
         />
         <StatCard
           title="Success Rate"
-          value={`${MOCK_STATISTICS.successRate}%`}
-          change="+0.8%"
-          changeType="positive"
+          value={`${stats.successRate}%`}
+          change={Number(stats.successRate) >= 90 ? 'Healthy' : 'Audited'}
+          changeType={Number(stats.successRate) >= 90 ? 'positive' : 'negative'}
           icon={CheckCircle2}
           color="emerald"
         />
         <StatCard
-          title="Failed Executions"
-          value={(MOCK_STATISTICS.failedExecutions).toLocaleString()}
-          change="-2.1%"
+          title="Failed / Compensated"
+          value={stats.failedExecutions.toLocaleString()}
+          change={`${stats.failedExecutions} rollbacks`}
           changeType="negative"
-          period="down vs last week"
+          period="audited"
           icon={XCircle}
           color="rose"
         />
@@ -252,7 +320,7 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={MOCK_STATISTICS.nodeExecutionDistribution}
+                  data={nodeDistribution}
                   cx="50%"
                   cy="50%"
                   innerRadius={55}
@@ -260,7 +328,7 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {MOCK_STATISTICS.nodeExecutionDistribution.map((entry, index) => (
+                  {nodeDistribution.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -278,7 +346,7 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-[11px] pt-3 border-t border-slate-100 dark:border-slate-800">
-            {MOCK_STATISTICS.nodeExecutionDistribution.map((item) => (
+            {nodeDistribution.map((item) => (
               <div key={item.name} className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
                 <span className="text-slate-600 dark:text-slate-300 truncate">{item.name}</span>
@@ -312,42 +380,48 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
           </div>
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-            {workflows.map((wf) => (
-              <div
-                key={wf.id}
-                onClick={() => navigate(`/builder?id=${wf.id}`)}
-                className="py-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 p-2 rounded-xl transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-3 truncate">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/40 flex items-center justify-center font-bold shrink-0">
-                    <GitBranch className="w-4 h-4" />
-                  </div>
-                  <div className="truncate">
-                    <h4 className="font-semibold text-xs text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
-                      {wf.name}
-                    </h4>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
-                      <span>Trigger: {wf.triggerType}</span>
-                      <span>•</span>
-                      <span>{wf.totalExecutions?.toLocaleString()} runs</span>
+            {workflows.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                No workflows registered yet for this tenant. Click "New Workflow" above to create or seed one.
+              </div>
+            ) : (
+              workflows.map((wf) => (
+                <div
+                  key={wf.id || wf._id}
+                  onClick={() => navigate(`/builder?id=${wf.id || wf._id}`)}
+                  className="py-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 p-2 rounded-xl transition-colors cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 truncate">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/40 flex items-center justify-center font-bold shrink-0">
+                      <GitBranch className="w-4 h-4" />
+                    </div>
+                    <div className="truncate">
+                      <h4 className="font-semibold text-xs text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+                        {wf.name}
+                      </h4>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
+                        <span>Trigger: {wf.triggerType || 'webhook'}</span>
+                        <span>•</span>
+                        <span>{wf.nodes?.length || 0} nodes</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-3 shrink-0">
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
-                      wf.status === 'ACTIVE'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50'
-                        : 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
-                    }`}
-                  >
-                    {wf.status}
-                  </span>
-                  <ArrowRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 transition-transform group-hover:translate-x-0.5" />
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                        wf.status === 'ACTIVE'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50'
+                          : 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/50'
+                      }`}
+                    >
+                      {wf.status}
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 transition-transform group-hover:translate-x-0.5" />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -372,54 +446,64 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
           </div>
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-            {executions.map((exec) => (
-              <div
-                key={exec.id}
-                onClick={() => navigate(`/executions/${exec.id}`)}
-                className="py-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 p-2 rounded-xl transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-3 truncate">
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                      exec.status === 'RUNNING'
-                        ? 'bg-indigo-500 animate-pulse'
-                        : exec.status === 'COMPLETED'
-                        ? 'bg-emerald-500'
-                        : exec.status === 'FAILED'
-                        ? 'bg-rose-500'
-                        : 'bg-slate-400'
-                    }`}
-                  />
-                  <div className="truncate">
-                    <div className="font-semibold text-xs text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
-                      {exec.workflowName}
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
-                      <span>{exec.id}</span>
-                      <span>•</span>
-                      <span>{exec.durationMs}ms</span>
+            {executions.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                No executions recorded yet. Open a workflow to trigger an execution.
+              </div>
+            ) : (
+              executions.map((exec) => (
+                <div
+                  key={exec.id || exec._id}
+                  onClick={() => navigate(`/executions/${exec.id || exec._id}`)}
+                  className="py-3 flex items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 p-2 rounded-xl transition-colors cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 truncate">
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                        exec.status === 'RUNNING' || exec.status === 'COMPENSATING'
+                          ? 'bg-indigo-500 animate-pulse'
+                          : exec.status === 'COMPLETED'
+                          ? 'bg-emerald-500'
+                          : exec.status === 'COMPENSATED'
+                          ? 'bg-amber-500'
+                          : exec.status === 'FAILED'
+                          ? 'bg-rose-500'
+                          : 'bg-slate-400'
+                      }`}
+                    />
+                    <div className="truncate">
+                      <div className="font-semibold text-xs text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+                        {exec.workflowName || 'Workflow Execution'}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
+                        <span>{exec.id || exec._id}</span>
+                        <span>•</span>
+                        <span>{exec.durationMs || 0}ms</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-semibold ${
-                      exec.status === 'RUNNING'
-                        ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 animate-pulse'
-                        : exec.status === 'COMPLETED'
-                        ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-                        : exec.status === 'FAILED'
-                        ? 'bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                    }`}
-                  >
-                    {exec.status}
-                  </span>
-                  <ArrowUpRight className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500" />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-semibold ${
+                        exec.status === 'RUNNING' || exec.status === 'COMPENSATING'
+                          ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 animate-pulse'
+                          : exec.status === 'COMPLETED'
+                          ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                          : exec.status === 'COMPENSATED'
+                          ? 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300'
+                          : exec.status === 'FAILED'
+                          ? 'bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                      }`}
+                    >
+                      {exec.status}
+                    </span>
+                    <ArrowUpRight className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500" />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

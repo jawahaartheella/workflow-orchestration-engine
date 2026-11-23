@@ -1,0 +1,166 @@
+import type { InferSchemaType } from "mongoose";
+import { model, Schema, Types } from "mongoose";
+
+const nodeExecutionSchema = new Schema(
+    {
+        nodeId: {
+            type: String,
+            required: true
+        },
+        nodeType: {
+            type: String,
+            required: true
+        },
+        status: {
+            type: String,
+            enum: ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED'],
+            default: 'PENDING'
+        },
+        input: {
+            type: Schema.Types.Mixed,
+            default: {}
+        },
+        output: {
+            type: Schema.Types.Mixed,
+            default: {}
+        },
+        error: {
+            type: String,
+            default: null
+        },
+        startedAt: {
+            type: Date,
+            default: null
+        },
+        completedAt: {
+            type: Date,
+            default: null
+        },
+        idempotencyKey: {
+            type: String,
+            default: null
+        },
+        isCompensation: {
+            type: Boolean,
+            default: false
+        },
+        compensatesNodeId: {
+            type: String,
+            default: null
+        }
+    },
+    {
+        _id: false
+    }
+);
+
+const compensationStepSchema = new Schema(
+    {
+        nodeId: {
+            type: String,
+            required: true
+        },
+        actionName: {
+            type: String,
+            required: true
+        },
+        status: {
+            type: String,
+            enum: ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED'],
+            default: 'PENDING'
+        },
+        idempotencyKey: {
+            type: String,
+            required: true
+        },
+        input: {
+            type: Schema.Types.Mixed,
+            default: {}
+        },
+        output: {
+            type: Schema.Types.Mixed,
+            default: null
+        },
+        error: {
+            type: String,
+            default: null
+        },
+        startedAt: {
+            type: Date,
+            default: null
+        },
+        completedAt: {
+            type: Date,
+            default: null
+        }
+    },
+    {
+        _id: false
+    }
+);
+
+const executionSchema = new Schema(
+    {
+        workflowId: {
+            type: Types.ObjectId,
+            required: true,
+            ref: 'Workflow',
+            index: true
+        },
+        tenantId: {
+            type: Types.ObjectId,
+            required: true,
+            ref: 'Tenant',
+            index: true
+        },
+        status: {
+            type: String,
+            enum: ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'COMPENSATING', 'COMPENSATED', 'COMPENSATION_FAILED', 'CANCELLED'],
+            default: 'PENDING'
+        },
+        isSaga: {
+            type: Boolean,
+            default: false
+        },
+        sagaStatus: {
+            type: String,
+            enum: ['NONE', 'IN_PROGRESS', 'COMPLETED', 'COMPENSATING', 'COMPENSATED', 'COMPENSATION_FAILED'],
+            default: 'NONE'
+        },
+        input: {
+            type: Schema.Types.Mixed,
+            default: {}
+        },
+        output: {
+            type: Schema.Types.Mixed,
+            default: null
+        },
+        nodeExecutions: {
+            type: [nodeExecutionSchema],
+            default: []
+        },
+        compensationSteps: {
+            type: [compensationStepSchema],
+            default: []
+        },
+        startedAt: {
+            type: Date,
+            default: null
+        },
+        completedAt: {
+            type: Date,
+            default: null
+        },
+        error: {
+            type: String,
+            default: null
+        }
+    },
+    {
+        timestamps: true
+    }
+);
+
+export type Execution = InferSchemaType<typeof executionSchema>;
+
+export const ExecutionModel = model('Execution', executionSchema);

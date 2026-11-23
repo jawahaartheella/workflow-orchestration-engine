@@ -4,7 +4,6 @@ import { apiKeyAuth } from './middleware/api-key-auth.middleware.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
 import apiKeyRoutes from './modules/api-keys/api-key.routes.js';
-import testResourcesRoutes from './modules/test-resources/test-resource.routes.js';
 import workflowRoutes from './modules/workflows/workflow.routes.js';
 import executionRoutes from './modules/executions/execution.routes.js';
 
@@ -36,7 +35,6 @@ app.get('/api/test-auth', apiKeyAuth, (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/api-keys', apiKeyRoutes);
-app.use('/api/test-resources', testResourcesRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/executions', executionRoutes);
 

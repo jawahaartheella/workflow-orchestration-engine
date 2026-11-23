@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Base API configuration from environment or default to local backend
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -11,18 +11,17 @@ export const apiClient = axios.create({
   },
 });
 
-// Request interceptor to attach dynamic Tenant Context and Auth Token
+// Request interceptor to attach authenticated API key
 apiClient.interceptors.request.use(
   (config) => {
-    // Read active tenant from localStorage to mirror multi-tenant AsyncLocalStorage context
-    const currentTenant = localStorage.getItem('wf_active_tenant') || 'acme_corp';
-    config.headers['X-Tenant-ID'] = currentTenant;
-
-    const authToken = localStorage.getItem('wf_auth_token');
-    if (authToken) {
-      config.headers.Authorization = `Bearer ${authToken}`;
+    let apiKey = localStorage.getItem('wf_api_key');
+    if (!apiKey) {
+      // Default to Acme Technologies demo API key for instant out-of-the-box readiness
+      apiKey = 'acme_live_secret_key_demo_98765';
+      localStorage.setItem('wf_api_key', apiKey);
     }
 
+    config.headers['x-api-key'] = apiKey;
     return config;
   },
   (error) => Promise.reject(error)

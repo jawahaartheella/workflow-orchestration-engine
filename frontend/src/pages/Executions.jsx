@@ -38,38 +38,37 @@ export default function Executions() {
 
   const activeId = id === 'live' || !id ? MOCK_EXECUTIONS[0].id : id;
 
-  // Load execution details
-  const loadExecution = async () => {
-    setLoading(true);
-    const data = await executionService.getExecutionById(activeId);
-    if (data) {
-      setExecution(data);
-      setTimeline(data.timeline || []);
-    }
-    setLoading(false);
-  };
-
+  // Real-time polling for actual backend execution status & Saga progression
   useEffect(() => {
-    loadExecution();
-  }, [activeId]);
+    let timer;
+    let isMounted = true;
 
-  // Socket.IO event listener for real-time progress
-  useEffect(() => {
-    const unsub = socketService.on('execution:progress', (update) => {
-      if (update.executionId === activeId) {
-        setExecution((prev) => ({
-          ...prev,
-          status: update.status || prev.status,
-          progress: update.progress ?? prev.progress,
-          currentNode: update.currentNode ?? prev.currentNode,
-        }));
-        if (update.stepLog) {
-          setTimeline((prev) => [...prev, update.stepLog]);
+    const fetchStatus = async () => {
+      try {
+        const data = await executionService.getExecutionById(activeId);
+        if (data && isMounted) {
+          setExecution(data);
+          setTimeline(data.timeline || []);
+          setLoading(false);
+
+          // Continue polling while state is non-terminal
+          const isOngoing = ['PENDING', 'RUNNING', 'COMPENSATING'].includes(data.status);
+          if (isOngoing) {
+            timer = setTimeout(fetchStatus, 1000);
+          }
         }
+      } catch (err) {
+        console.warn('Execution poll notice:', err);
+        if (isMounted) setLoading(false);
       }
-    });
+    };
 
-    return () => unsub();
+    fetchStatus();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [activeId]);
 
   // Actions
@@ -164,10 +163,46 @@ export default function Executions() {
     PAUSED: 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/50',
     CANCELLED: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
     PENDING: 'bg-sky-50 dark:bg-sky-950 text-sky-600 border-sky-200',
+    COMPENSATING: 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-300 animate-pulse font-bold',
+    COMPENSATED: 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border-purple-300 font-bold',
+    COMPENSATION_FAILED: 'bg-rose-100 dark:bg-rose-950 text-rose-700 border-rose-400 font-black',
   };
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      {/* Saga Distributed Transaction Banner */}
+      {execution.isSaga && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-slate-50 dark:from-purple-950/40 dark:via-indigo-950/40 dark:to-slate-900 border border-purple-200 dark:border-purple-800/60 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-sm shadow-sm">
+              Ω
+            </div>
+            <div>
+              <div className="text-xs font-bold text-purple-900 dark:text-purple-200 flex items-center gap-2">
+                <span>Saga Distributed Transaction Protocol</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-200/70 dark:bg-purple-900/80 text-purple-800 dark:text-purple-200 uppercase font-semibold">
+                  Orchestrated
+                </span>
+              </div>
+              <div className="text-[11px] text-purple-700 dark:text-purple-300 mt-0.5">
+                {execution.sagaStatus === 'COMPENSATED'
+                  ? 'Forward step failed: Reverse-order compensation executed successfully. All states rolled back.'
+                  : execution.sagaStatus === 'COMPENSATING'
+                  ? 'Forward step failed: Running reverse-order compensating actions...'
+                  : execution.sagaStatus === 'COMPLETED'
+                  ? 'All distributed transactions committed successfully.'
+                  : execution.sagaStatus === 'COMPENSATION_FAILED'
+                  ? 'Critical: Compensation action failed. Manual operator review required.'
+                  : 'Saga active: monitoring forward transaction progression.'}
+              </div>
+            </div>
+          </div>
+          <span className="text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-purple-600 text-white shadow-xs">
+            {execution.sagaStatus}
+          </span>
+        </div>
+      )}
+
       {/* Top Header / Back Button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">

@@ -24,6 +24,7 @@ import NodePalette from '../components/NodePalette';
 import NodeConfigPanel from '../components/NodeConfigPanel';
 import ValidationPanel from '../components/ValidationPanel';
 import ExecutionTimeline from '../components/ExecutionTimeline';
+import Modal from '../components/Modal';
 
 import { workflowService } from '../services/workflowService';
 import { executionService } from '../services/executionService';
@@ -73,6 +74,13 @@ export default function WorkflowBuilder() {
   const [simTimeline, setSimTimeline] = useState([]);
   const [showSimDrawer, setShowSimDrawer] = useState(false);
   const simCleanupRef = useRef(null);
+
+  // Real Backend Execution State
+  const [showExecuteModal, setShowExecuteModal] = useState(false);
+  const [execOrderId, setExecOrderId] = useState(`ORD-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [execAmount, setExecAmount] = useState('150.00');
+  const [failShipmentToggle, setFailShipmentToggle] = useState(false);
+  const [isTriggering, setIsTriggering] = useState(false);
 
   // Push history state
   const pushHistory = useCallback((currentNodes, currentEdges) => {
@@ -329,6 +337,47 @@ export default function WorkflowBuilder() {
     setSimActiveNodeId(null);
   };
 
+  // Real Backend Workflow Execution
+  const handleBackendExecute = async () => {
+    setIsTriggering(true);
+    try {
+      // 1. Ensure latest canvas state is persisted to MongoDB
+      const saved = await workflowService.saveWorkflow({
+        ...workflow,
+        nodes,
+        edges,
+      });
+      setWorkflow(saved);
+
+      // 2. Ensure workflow is activated before execution
+      if (saved.status !== 'ACTIVE') {
+        try {
+          await workflowService.toggleWorkflowStatus(saved._id || saved.id, 'DRAFT');
+          saved.status = 'ACTIVE';
+        } catch (e) {
+          console.warn('Activation check:', e);
+        }
+      }
+
+      // 3. Dispatch execution to BullMQ queue on backend
+      const payload = {
+        orderId: execOrderId,
+        amount: Number(execAmount) || 150.00,
+        currency: 'USD',
+        failShipment: failShipmentToggle,
+        shouldFail: failShipmentToggle,
+      };
+
+      const exec = await executionService.triggerExecution(saved, payload);
+      setShowExecuteModal(false);
+      navigate(`/executions/${exec.id || exec._id}`);
+    } catch (err) {
+      alert(`Backend Execution Failed: ${err.message || 'Check workflow definition and status'}`);
+    } finally {
+      setIsTriggering(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] w-full overflow-hidden select-none bg-slate-100 dark:bg-slate-950">
       {/* Top Builder Toolbar */}
@@ -394,6 +443,15 @@ export default function WorkflowBuilder() {
                 ? 'DAG Valid'
                 : `${validationResult.errors.length} Issues`}
             </span>
+          </button>
+
+          {/* Real Backend Execution Button */}
+          <button
+            onClick={() => setShowExecuteModal(true)}
+            className="flex items-center gap-1.5 py-1.5 px-3.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl shadow-sm transition-all"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Run on Backend</span>
           </button>
 
           {/* Simulate Execution Button */}
@@ -553,6 +611,82 @@ export default function WorkflowBuilder() {
           </div>
         </div>
       )}
+
+      {/* Backend Execution Configuration Modal */}
+      <Modal
+        isOpen={showExecuteModal}
+        onClose={() => setShowExecuteModal(false)}
+        title="Trigger Asynchronous Backend Execution"
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4 text-xs">
+          <p className="text-slate-500">
+            Enqueues a persistent execution job to the BullMQ worker. The engine will validate tenant ownership, traverse the DAG, and persist results to MongoDB.
+          </p>
+
+          <div>
+            <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+              Order ID / Correlation ID
+            </label>
+            <input
+              type="text"
+              value={execOrderId}
+              onChange={(e) => setExecOrderId(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-slate-900 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+              Transaction Amount (USD)
+            </label>
+            <input
+              type="number"
+              step="10"
+              value={execAmount}
+              onChange={(e) => setExecAmount(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-slate-900 dark:text-white"
+            />
+          </div>
+
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl space-y-2">
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={failShipmentToggle}
+                onChange={(e) => setFailShipmentToggle(e.target.checked)}
+                className="mt-0.5 rounded text-rose-600 focus:ring-rose-500"
+              />
+              <div>
+                <span className="font-bold text-amber-900 dark:text-amber-200">
+                  Simulate Carrier Shipment Failure (Trigger Saga Compensation)
+                </span>
+                <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                  When checked, step 3 (Shipment) will fail, forcing the Saga engine to roll back completed payment and inventory steps in strict reverse order.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={() => setShowExecuteModal(false)}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleBackendExecute}
+              disabled={isTriggering}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center gap-1.5"
+            >
+              {isTriggering ? 'Dispatching...' : 'Dispatch Execution (HTTP 202)'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

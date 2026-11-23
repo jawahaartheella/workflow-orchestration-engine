@@ -1,6 +1,6 @@
 import { WorkflowModel } from "../workflows/workflow.model.js";
 import { ExecutionModel } from "./execution.model.js";
-import { executeWorkflow } from "./engine/execution.engine.js";
+import { enqueueWorkflowExecution } from "../queues/execution.queue.js";
 
 interface StartExecutionInput {
     workflowId: string,
@@ -26,7 +26,7 @@ export async function startWorkflowExecution(data: StartExecutionInput) {
         throw new Error('Only active workflows can be executed.');
     }
 
-    // 4. Create a new execution record
+    // 4. Create a persistent execution record with status PENDING
     const execution = await ExecutionModel.create({
         workflowId: workflow._id,
         tenantId: data.tenantId,
@@ -39,33 +39,15 @@ export async function startWorkflowExecution(data: StartExecutionInput) {
         error: null
     });
 
-    // 5. Mark execution as RUNNING
-    execution.status = 'RUNNING';
-    execution.startedAt = new Date();
+    // 5. Enqueue job for background asynchronous worker processing
+    await enqueueWorkflowExecution({
+        executionId: execution._id.toString(),
+        workflowId: workflow._id.toString(),
+        tenantId: data.tenantId,
+        input: data.input ?? {}
+    });
 
-    // 6. Start the execution engine
-    const result = await executeWorkflow(
-        workflow,
-        {
-            executionId: execution._id.toString(),
-            tenantId: data.tenantId,
-            workflowId: workflow._id.toString(),
-            workflowInput: data.input ?? {}
-        }
-    );
-
-    // 7. Save individual node execution results
-    execution.set('nodeExecutions', result.nodeExecutions);
-
-    // 8. Update overall execution status and output
-    execution.status = result.status;
-    execution.output = result.output;
-    execution.error = result.error;
-    execution.completedAt = new Date();
-
-    // 9. Persist final execution details
-    await execution.save();
-
+    // 6. Return asynchronous response record immediately
     return execution;
 }
 

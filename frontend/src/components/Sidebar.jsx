@@ -68,15 +68,24 @@ export default function Sidebar({ collapsed, setCollapsed }) {
       <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            item.path === '/'
-              ? location.pathname === '/'
-              : location.pathname.startsWith(item.path);
+          let isActive = false;
+          if (item.path === '/') {
+            isActive = location.pathname === '/';
+          } else if (item.path === '/executions') {
+            // Execution History is strictly the history table page
+            isActive = location.pathname === '/executions';
+          } else if (item.path === '/executions/live') {
+            // Live Monitoring is active on /executions/live and on individual live execution telemetry (/executions/:id)
+            isActive = location.pathname.startsWith('/executions/') && location.pathname !== '/executions';
+          } else {
+            isActive = location.pathname.startsWith(item.path);
+          }
 
           return (
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === '/executions' || item.path === '/'}
               title={collapsed ? item.label : undefined}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all duration-150 ${
                 isActive

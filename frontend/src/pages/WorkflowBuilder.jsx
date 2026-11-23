@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNodesState, useEdgesState } from '@xyflow/react';
 import {
   Save,
   Play,
@@ -32,6 +33,19 @@ import { socketService } from '../services/socketService';
 import { useAuth } from '../context/AuthContext';
 import { MOCK_TEMPLATES } from '../data/mockData';
 
+const BLANK_CANVAS_NODES = [
+  {
+    id: 'start-1',
+    type: 'start',
+    position: { x: 250, y: 200 },
+    data: {
+      label: 'Trigger Ingress',
+      description: 'Webhook entrypoint',
+      config: { triggerType: 'webhook', endpoint: '/v1/webhooks/ingress' },
+    },
+  },
+];
+
 export default function WorkflowBuilder() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -41,17 +55,17 @@ export default function WorkflowBuilder() {
   // Workflow State
   const [workflow, setWorkflow] = useState({
     id: `wf_${Date.now().toString(36)}`,
-    name: 'New Orchestration Pipeline',
+    name: 'New Workflow',
     description: 'Custom visual DAG workflow execution graph',
-    tenantId: activeTenant?.id || 'acme_corp',
+    tenantId: activeTenant?.id || '',
     status: 'DRAFT',
     version: '1.0.0',
-    nodes: MOCK_TEMPLATES[0].nodes,
-    edges: MOCK_TEMPLATES[0].edges,
+    nodes: BLANK_CANVAS_NODES,
+    edges: [],
   });
 
-  const [nodes, setNodes] = useState(MOCK_TEMPLATES[0].nodes);
-  const [edges, setEdges] = useState(MOCK_TEMPLATES[0].edges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(BLANK_CANVAS_NODES);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   // Undo / Redo History Stack
   const historyRef = useRef([]);
@@ -127,23 +141,45 @@ export default function WorkflowBuilder() {
   // Load workflow if ID passed
   useEffect(() => {
     async function initWorkflow() {
-      if (workflowId) {
-        const found = await workflowService.getWorkflowById(workflowId);
-        if (found) {
-          setWorkflow(found);
-          setNodes(found.nodes || []);
-          setEdges(found.edges || []);
-          historyRef.current = [{ nodes: found.nodes || [], edges: found.edges || [] }];
-          historyIndexRef.current = 0;
-          return;
+      if (workflowId && workflowId !== 'undefined' && workflowId !== 'null') {
+        try {
+          const found = await workflowService.getWorkflowById(workflowId);
+          if (found) {
+            const wfData = {
+              ...found,
+              id: found._id ? found._id.toString() : found.id,
+              _id: found._id ? found._id.toString() : found.id,
+            };
+            setWorkflow(wfData);
+            setNodes(wfData.nodes || []);
+            setEdges(wfData.edges || []);
+            historyRef.current = [{ nodes: wfData.nodes || [], edges: wfData.edges || [] }];
+            historyIndexRef.current = 0;
+            return;
+          }
+        } catch (err) {
+          console.error('Failed to load workflow by id:', err);
         }
       }
-      // default template init
-      historyRef.current = [{ nodes: MOCK_TEMPLATES[0].nodes, edges: MOCK_TEMPLATES[0].edges }];
+      // default clean slate init
+      const blankWf = {
+        id: `wf_${Date.now().toString(36)}`,
+        name: 'New Workflow',
+        description: 'Visual DAG workflow execution graph',
+        tenantId: activeTenant?.id || '',
+        status: 'DRAFT',
+        version: '1.0.0',
+        nodes: BLANK_CANVAS_NODES,
+        edges: [],
+      };
+      setWorkflow(blankWf);
+      setNodes(BLANK_CANVAS_NODES);
+      setEdges([]);
+      historyRef.current = [{ nodes: BLANK_CANVAS_NODES, edges: [] }];
       historyIndexRef.current = 0;
     }
     initWorkflow();
-  }, [workflowId]);
+  }, [workflowId, activeTenant?.id]);
 
   // Keep selected node updated
   const handleNodeSelect = useCallback((node) => {
@@ -245,14 +281,19 @@ export default function WorkflowBuilder() {
         ...workflow,
         nodes,
         edges,
-        tenantId: activeTenant?.id || 'acme_corp',
+        tenantId: activeTenant?.id || '',
         updatedAt: new Date().toISOString(),
       };
       const saved = await workflowService.saveWorkflow(payload);
+      const targetId = saved._id || saved.id;
       setWorkflow(saved);
+      if (!workflowId || workflowId !== targetId) {
+        navigate(`/builder?id=${targetId}`, { replace: true });
+      }
       setSaveToast('Workflow successfully persisted to tenant store!');
       setTimeout(() => setSaveToast(null), 3500);
     } catch (err) {
+      console.error('Workflow save error:', err);
       setSaveToast('Failed to save workflow.');
     } finally {
       setIsSaving(false);
@@ -539,15 +580,17 @@ export default function WorkflowBuilder() {
         {/* Center Canvas */}
         <div className="flex-1 h-full relative">
           <WorkflowCanvas
-            initialNodes={nodes}
-            initialEdges={edges}
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            setNodes={setNodes}
+            setEdges={setEdges}
             onNodeSelect={handleNodeSelect}
             onValidationChange={setValidationResult}
             isSimulating={isSimulating}
             activeSimNodeId={simActiveNodeId}
             cycleEdges={validationResult.cycleResult?.cycleEdges || []}
-            onNodesChangeParent={setNodes}
-            onEdgesChangeParent={setEdges}
           />
         </div>
 

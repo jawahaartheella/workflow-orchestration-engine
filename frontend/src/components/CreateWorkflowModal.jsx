@@ -12,7 +12,7 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedTemplateId, setSelectedTemplateId] = useState('template_ecommerce');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('blank');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -24,19 +24,13 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
       let initialNodes = [];
       let initialEdges = [];
 
-      if (selectedTemplateId !== 'blank') {
-        const found = MOCK_TEMPLATES.find((t) => t.id === selectedTemplateId);
-        if (found) {
-          initialNodes = found.nodes;
-          initialEdges = found.edges;
-        }
-      } else {
-        // Blank canvas: start with a single Start node
+      if (selectedTemplateId === 'blank') {
+        // Blank canvas: start with a single Start trigger node
         initialNodes = [
           {
             id: 'start-1',
             type: 'start',
-            position: { x: 100, y: 150 },
+            position: { x: 250, y: 200 },
             data: {
               label: 'Trigger Ingress',
               description: 'Webhook entrypoint',
@@ -45,21 +39,32 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
           },
         ];
         initialEdges = [];
+      } else {
+        const found = MOCK_TEMPLATES.find((t) => t.id === selectedTemplateId);
+        if (found) {
+          initialNodes = found.nodes || [];
+          initialEdges = found.edges || [];
+        }
       }
 
       const newWorkflow = {
-        name,
-        description: description || 'Visual orchestration pipeline',
-        tenantId: activeTenant?.id || 'acme_corp',
-        status: 'DRAFT',
-        version: '1.0.0',
+        name: name.trim(),
+        description: description.trim() || 'Visual orchestration pipeline',
         nodes: initialNodes,
         edges: initialEdges,
       };
 
       const saved = await workflowService.saveWorkflow(newWorkflow);
+      const targetId = saved?.id || saved?._id;
+      setName('');
+      setDescription('');
+      setSelectedTemplateId('blank');
       onClose();
-      navigate(`/builder?id=${saved.id}`);
+      if (targetId) {
+        navigate(`/builder?id=${targetId}`);
+      }
+    } catch (err) {
+      console.error('Failed to create workflow:', err);
     } finally {
       setIsSubmitting(false);
     }
@@ -106,7 +111,29 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
             Start From Blueprint Template
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Template 1: Ecommerce */}
+            {/* Template 1: Blank (Default) */}
+            <div
+              onClick={() => setSelectedTemplateId('blank')}
+              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                selectedTemplateId === 'blank'
+                  ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
+                  <Layers className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-bold text-slate-900 dark:text-white">
+                  Blank Canvas
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Start from a clean slate with a standalone Start trigger node.
+              </p>
+            </div>
+
+            {/* Template 2: Ecommerce */}
             <div
               onClick={() => setSelectedTemplateId('template_ecommerce')}
               className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
@@ -116,7 +143,7 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">
+                <div className="w-6 h-6 rounded-lg bg-slate-700 text-white flex items-center justify-center font-bold">
                   <ShoppingCart className="w-3.5 h-3.5" />
                 </div>
                 <span className="font-bold text-slate-900 dark:text-white truncate">
@@ -128,7 +155,7 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
               </p>
             </div>
 
-            {/* Template 2: Batch Sync */}
+            {/* Template 3: Batch Sync */}
             <div
               onClick={() => setSelectedTemplateId('template_batch_sync')}
               className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
@@ -147,28 +174,6 @@ export default function CreateWorkflowModal({ isOpen, onClose }) {
               </div>
               <p className="text-[11px] text-slate-400 line-clamp-2">
                 Cron schedule, REST fetch, throttled delay & database upsert.
-              </p>
-            </div>
-
-            {/* Template 3: Blank */}
-            <div
-              onClick={() => setSelectedTemplateId('blank')}
-              className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
-                selectedTemplateId === 'blank'
-                  ? 'border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 ring-2 ring-indigo-500/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-lg bg-slate-700 text-white flex items-center justify-center font-bold">
-                  <Layers className="w-3.5 h-3.5" />
-                </div>
-                <span className="font-bold text-slate-900 dark:text-white">
-                  Blank Canvas
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Start from a clean slate with a standalone Start trigger node.
               </p>
             </div>
           </div>

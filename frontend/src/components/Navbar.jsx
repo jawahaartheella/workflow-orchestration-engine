@@ -109,6 +109,7 @@ export default function Navbar({ onOpenCreateWorkflow }) {
                       onClick={() => {
                         switchTenant(tenant.id);
                         setTenantDropdownOpen(false);
+                        navigate('/');
                       }}
                       className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-colors ${
                         isSelected

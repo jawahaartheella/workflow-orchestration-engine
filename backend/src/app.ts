@@ -40,4 +40,13 @@ app.use('/api/test-resources', testResourcesRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/executions', executionRoutes);
 
+// Global JSON error handler
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    res.status(status).json({
+        message: err.message || 'Internal Server Error',
+        error: err.name || 'Error'
+    });
+});
+
 export default app;

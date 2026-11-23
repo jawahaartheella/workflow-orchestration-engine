@@ -36,14 +36,18 @@ export const workflowService = {
       const res = await apiClient.get('/workflows');
       const items = res?.data || (Array.isArray(res) ? res : []);
       if (!Array.isArray(items)) return [];
-      return items.map((w) => ({
-        ...w,
-        id: w._id || w.id,
-        status: (w.status || 'ACTIVE').toUpperCase(),
-        tags: Array.isArray(w.tags) ? w.tags : ['orchestration', 'dag'],
-        totalExecutions: w.totalExecutions || 0,
-        triggerType: w.triggerType || w.nodes?.find((n) => n.type === 'trigger' || n.type === 'start')?.data?.config?.triggerType || 'webhook',
-      }));
+      return items.map((w) => {
+        const normalizedId = w._id ? w._id.toString() : (w.id ? w.id.toString() : '');
+        return {
+          ...w,
+          id: normalizedId,
+          _id: normalizedId,
+          status: (w.status || 'ACTIVE').toUpperCase(),
+          tags: Array.isArray(w.tags) ? w.tags : ['orchestration', 'dag'],
+          totalExecutions: w.totalExecutions || 0,
+          triggerType: w.triggerType || w.nodes?.find((n) => n.type === 'trigger' || n.type === 'start')?.data?.config?.triggerType || 'webhook',
+        };
+      });
     } catch (err) {
       console.error('Failed to fetch workflows from backend:', err);
       return [];
@@ -58,9 +62,11 @@ export const workflowService = {
       const res = await apiClient.get(`/workflows/${id}`);
       const wf = res?.data || res;
       if (wf && typeof wf === 'object') {
+        const normalizedId = wf._id ? wf._id.toString() : (wf.id ? wf.id.toString() : id);
         return {
           ...wf,
-          id: wf._id || wf.id,
+          id: normalizedId,
+          _id: normalizedId,
           status: (wf.status || 'ACTIVE').toUpperCase(),
         };
       }
@@ -72,6 +78,8 @@ export const workflowService = {
       if (template) {
         return {
           ...template,
+          id: template.id,
+          _id: template.id,
           status: 'DRAFT',
           version: 1,
           createdAt: new Date().toISOString(),
@@ -86,8 +94,9 @@ export const workflowService = {
    * Save or update workflow
    */
   async saveWorkflow(workflow) {
-    const isExistingBackendId = workflow._id || (workflow.id && /^[0-9a-fA-F]{24}$/.test(workflow.id));
-    const targetId = workflow._id || workflow.id;
+    const rawId = workflow._id || workflow.id;
+    const isExistingBackendId = rawId && /^[0-9a-fA-F]{24}$/.test(rawId.toString());
+    const targetId = rawId ? rawId.toString() : null;
 
     const payload = {
       name: workflow.name,
@@ -96,15 +105,28 @@ export const workflowService = {
       edges: workflow.edges || [],
     };
 
-    if (isExistingBackendId) {
+    let result = null;
+    if (isExistingBackendId && targetId) {
       // Update existing workflow
       const res = await apiClient.patch(`/workflows/${targetId}`, payload);
-      return res?.data || res;
+      result = res?.data || res;
     } else {
       // Create new workflow
       const res = await apiClient.post('/workflows', payload);
-      return res?.data || res;
+      result = res?.data || res;
     }
+
+    const normalizedId = result._id ? result._id.toString() : (result.id ? result.id.toString() : targetId);
+    return {
+      ...result,
+      id: normalizedId,
+      _id: normalizedId,
+      name: result.name || workflow.name,
+      description: result.description !== undefined ? result.description : workflow.description,
+      nodes: result.nodes || workflow.nodes,
+      edges: result.edges || workflow.edges,
+      status: (result.status || workflow.status || 'DRAFT').toUpperCase(),
+    };
   },
 
   /**

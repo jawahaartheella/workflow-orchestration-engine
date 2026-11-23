@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import apiClient from '../services/api';
 import { MOCK_TENANTS } from '../data/mockData';
 
@@ -10,11 +11,18 @@ const DEMO_KEYS = {
 };
 
 export function AuthProvider({ children }) {
+  const navigate = useNavigate();
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('wf_api_key') || 'acme_live_secret_key_demo_98765');
   const [activeTenant, setActiveTenant] = useState(() => {
     try {
       const saved = localStorage.getItem('wf_active_tenant_data');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.name) {
+          const fallback = MOCK_TENANTS.find((m) => m.slug === parsed.slug || m.id === parsed.id) || MOCK_TENANTS[0];
+          return { ...fallback, ...parsed };
+        }
+      }
     } catch {
       // ignore
     }
@@ -38,7 +46,9 @@ export function AuthProvider({ children }) {
       });
 
       if (res && res.data && res.data.tenant) {
+        const fallback = MOCK_TENANTS.find((m) => m.slug === res.data.tenant.slug || m.id === res.data.tenant.id) || MOCK_TENANTS[0];
         const tenantData = {
+          ...fallback,
           ...res.data.tenant,
           id: res.data.tenant.id || res.data.tenant._id,
         };
@@ -67,10 +77,14 @@ export function AuthProvider({ children }) {
       const res = await apiClient.get('/auth/tenants');
       const tenantList = res?.data || (Array.isArray(res) ? res : []);
       if (Array.isArray(tenantList) && tenantList.length > 0) {
-        const mapped = tenantList.map((t) => ({
-          ...t,
-          id: t._id || t.id,
-        }));
+        const mapped = tenantList.map((t) => {
+          const fallback = MOCK_TENANTS.find((m) => m.slug === t.slug || m.id === (t._id || t.id)) || {};
+          return {
+            ...fallback,
+            ...t,
+            id: t._id || t.id,
+          };
+        });
         setTenants(mapped);
       } else {
         setTenants(MOCK_TENANTS);
@@ -83,7 +97,9 @@ export function AuthProvider({ children }) {
   const switchTenant = useCallback(async (tenantId) => {
     const selected = tenants.find((t) => t.id === tenantId || t._id === tenantId || t.slug === tenantId);
     if (selected) {
+      const fallback = MOCK_TENANTS.find((m) => m.slug === selected.slug || m.id === selected.id) || MOCK_TENANTS[0];
       const tenantData = {
+        ...fallback,
         ...selected,
         id: selected.id || selected._id,
       };
@@ -98,8 +114,11 @@ export function AuthProvider({ children }) {
         localStorage.setItem('wf_api_key', defaultKey);
         await verifyApiKey(defaultKey);
       }
+
+      // Navigate to the Dashboard when switching tenant context
+      navigate('/');
     }
-  }, [tenants, verifyApiKey]);
+  }, [tenants, verifyApiKey, navigate]);
 
   useEffect(() => {
     refreshTenants();

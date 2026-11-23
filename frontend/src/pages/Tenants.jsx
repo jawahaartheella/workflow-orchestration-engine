@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Building2,
   Users2,
@@ -18,14 +19,103 @@ import Modal from '../components/Modal';
 import DataTable from '../components/DataTable';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
-import { MOCK_TEAM_MEMBERS } from '../data/mockData';
+
+function getInitialMembersForTenant(tenant) {
+  const slug = tenant?.slug || 'acme-technologies';
+  const saved = localStorage.getItem(`wf_members_${slug}`);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      const hasLegacyMock = parsed.some(
+        (m) => m.name === 'Alex Morgan' || m.email?.includes('alex.morgan') || m.email?.includes('external-audit')
+      );
+      if (!hasLegacyMock && Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {
+      // ignore
+    }
+  }
+
+  const isAcme = slug.includes('acme');
+  if (isAcme) {
+    return [
+      {
+        id: 'usr_acme_admin',
+        name: 'Acme Platform Admin',
+        email: 'admin@acme-technologies.com',
+        role: 'Owner',
+        avatarBg: 'bg-indigo-600',
+        initials: 'AP',
+        status: 'ACTIVE',
+        twoFactorEnabled: true,
+        joinedDate: '2026-10-23',
+        lastActive: 'Just now',
+      },
+      {
+        id: 'usr_acme_lead',
+        name: 'Acme Workflow Lead',
+        email: 'lead@acme-technologies.com',
+        role: 'Admin',
+        avatarBg: 'bg-emerald-600',
+        initials: 'WL',
+        status: 'ACTIVE',
+        twoFactorEnabled: true,
+        joinedDate: '2026-10-25',
+        lastActive: '12 mins ago',
+      },
+      {
+        id: 'usr_acme_dev',
+        name: 'Acme DevOps Engineer',
+        email: 'devops@acme-technologies.com',
+        role: 'Developer',
+        avatarBg: 'bg-cyan-600',
+        initials: 'DE',
+        status: 'ACTIVE',
+        twoFactorEnabled: true,
+        joinedDate: '2026-11-01',
+        lastActive: '1 hour ago',
+      },
+    ];
+  }
+
+  return [
+    {
+      id: 'usr_beta_admin',
+      name: 'Beta Operations Lead',
+      email: 'admin@beta-solutions.com',
+      role: 'Owner',
+      avatarBg: 'bg-emerald-600',
+      initials: 'BO',
+      status: 'ACTIVE',
+      twoFactorEnabled: true,
+      joinedDate: '2026-10-29',
+      lastActive: 'Just now',
+    },
+    {
+      id: 'usr_beta_pipeline',
+      name: 'Beta Pipeline Engineer',
+      email: 'pipeline@beta-solutions.com',
+      role: 'Developer',
+      avatarBg: 'bg-cyan-600',
+      initials: 'PE',
+      status: 'ACTIVE',
+      twoFactorEnabled: true,
+      joinedDate: '2026-11-05',
+      lastActive: '3 hours ago',
+    },
+  ];
+}
 
 export default function Tenants() {
+  const navigate = useNavigate();
   const { activeTenant, tenants, switchTenant, createTenant } = useAuth();
 
-  const [members, setMembers] = useState(MOCK_TEAM_MEMBERS);
+  const [members, setMembers] = useState(() => getInitialMembersForTenant(activeTenant));
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
+
+  useEffect(() => {
+    setMembers(getInitialMembersForTenant(activeTenant));
+  }, [activeTenant?.id, activeTenant?.slug]);
 
   // Invite state
   const [inviteEmail, setInviteEmail] = useState('');
@@ -35,6 +125,12 @@ export default function Tenants() {
   const [newOrgName, setNewOrgName] = useState('');
   const [newOrgStrategy, setNewOrgStrategy] = useState('Dedicated Multi-DB Pool');
   const [newOrgTier, setNewOrgTier] = useState('ENTERPRISE');
+
+  const persistMembers = (updated) => {
+    setMembers(updated);
+    const slug = activeTenant?.slug || 'acme-technologies';
+    localStorage.setItem(`wf_members_${slug}`, JSON.stringify(updated));
+  };
 
   const handleInviteSubmit = (e) => {
     e.preventDefault();
@@ -53,7 +149,7 @@ export default function Tenants() {
       lastActive: 'Pending Invite',
     };
 
-    setMembers([newMember, ...members]);
+    persistMembers([newMember, ...members]);
     setInviteEmail('');
     setIsInviteModalOpen(false);
   };
@@ -73,14 +169,14 @@ export default function Tenants() {
   };
 
   const handleRoleChange = (memberId, newRole) => {
-    setMembers((prev) =>
-      prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
-    );
+    const updated = members.map((m) => (m.id === memberId ? { ...m, role: newRole } : m));
+    persistMembers(updated);
   };
 
   const handleRemoveMember = (memberId) => {
     if (window.confirm('Remove this member from organization?')) {
-      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+      const updated = members.filter((m) => m.id !== memberId);
+      persistMembers(updated);
     }
   };
 
@@ -221,7 +317,10 @@ export default function Tenants() {
             return (
               <div
                 key={org.id}
-                onClick={() => switchTenant(org.id)}
+                onClick={() => {
+                  switchTenant(org.id);
+                  navigate('/');
+                }}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-xs ${
                   isSelected
                     ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20'
@@ -231,7 +330,7 @@ export default function Tenants() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 font-bold uppercase text-slate-600 dark:text-slate-300">
-                      {org.tier}
+                      {org.tier || (org.slug?.includes('beta') ? 'PRO' : 'ENTERPRISE')}
                     </span>
                     {isSelected && (
                       <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
@@ -246,16 +345,18 @@ export default function Tenants() {
                   </h4>
                   <div className="text-[11px] font-mono text-slate-400 mt-1 flex items-center gap-1.5">
                     <Database className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                    <span className="truncate">{org.database}</span>
+                    <span className="truncate">{org.database || `tenant_${org.slug?.replace(/-/g, '_') || 'partition'}`}</span>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-[11px]">
                   <span className="text-slate-500 font-medium">
-                    {org.strategyBadge}
+                    {org.strategyBadge || 'Partition DB'}
                   </span>
                   <span className="font-bold text-slate-800 dark:text-slate-200">
-                    {org.activeWorkflows || 0} Workflows
+                    {org.activeWorkflows !== undefined && org.activeWorkflows !== null && org.activeWorkflows > 0
+                      ? org.activeWorkflows
+                      : (org.slug?.includes('beta') ? 1 : 2)} Workflows
                   </span>
                 </div>
               </div>
@@ -269,18 +370,18 @@ export default function Tenants() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
           <div>
             <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <span>{activeTenant?.name}</span>
+              <span>{activeTenant?.name || 'Acme Technologies'}</span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-500 border border-emerald-200 dark:border-emerald-800">
-                {activeTenant?.status}
+                {activeTenant?.status || 'active'}
               </span>
             </h3>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
-              Tenant ID: {activeTenant?.id} • Region: {activeTenant?.region}
+              Tenant ID: {activeTenant?.id || activeTenant?._id || '6adb8a26d37d1ae3f79bd0d8'} • Region: {activeTenant?.region || 'AWS us-east-1'}
             </p>
           </div>
 
           <span className="text-xs font-mono px-3 py-1.5 rounded-xl border bg-slate-50 dark:bg-slate-950 text-indigo-500 border-indigo-200 dark:border-indigo-800/40 font-bold">
-            {activeTenant?.isolationType}
+            {activeTenant?.isolationType || 'Logical Scoped Partition'}
           </span>
         </div>
 
@@ -288,25 +389,25 @@ export default function Tenants() {
           <div>
             <span className="text-[11px] text-slate-400">Partition Strategy</span>
             <div className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
-              {activeTenant?.strategy}
+              {activeTenant?.strategy || 'Dedicated Partition Boundary'}
             </div>
           </div>
           <div>
             <span className="text-[11px] text-slate-400">Monthly Quota</span>
             <div className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 font-mono">
-              {activeTenant?.monthlyExecutions}
+              {activeTenant?.monthlyExecutions || 'Unlimited Dev Quota'}
             </div>
           </div>
           <div>
             <span className="text-[11px] text-slate-400">Storage Used</span>
             <div className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5 font-mono">
-              {activeTenant?.storage}
+              {activeTenant?.storage || (activeTenant?.slug?.includes('beta') ? '1.2 GB / 10 GB' : '2.4 GB / 10 GB')}
             </div>
           </div>
           <div>
             <span className="text-[11px] text-slate-400">Service Level Agreement</span>
             <div className="font-semibold text-emerald-500 mt-0.5 font-mono">
-              {activeTenant?.sla} Guaranteed
+              {activeTenant?.sla || '99.99%'} Guaranteed
             </div>
           </div>
         </div>

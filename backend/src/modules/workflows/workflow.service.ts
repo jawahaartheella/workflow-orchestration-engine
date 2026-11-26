@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { WorkflowModel } from "./workflow.model.js";
 import type { Workflow } from "./workflow.model.js";
 import { validateWorkflowDefinition } from "./workflow.validator.js";
+import { ExecutionModel } from "../executions/execution.model.js";
 
 interface CreateWorkflowInput {
     name: string,
@@ -29,18 +30,93 @@ export async function createWorkflow(
 export async function getWorkflows(tenantId: string) {
     const workflows = await WorkflowModel.find({
         tenantId
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }).lean();
 
-    return workflows;
+    try {
+        const executionStats = await ExecutionModel.aggregate([
+            { $match: { tenantId: new Types.ObjectId(tenantId) } },
+            {
+                $group: {
+                    _id: "$workflowId",
+                    totalExecutions: { $sum: 1 },
+                    completedExecutions: {
+                        $sum: { $cond: [{ $eq: ["$status", "COMPLETED"] }, 1, 0] }
+                    },
+                    lastExecutedAt: { $max: "$createdAt" }
+                }
+            }
+        ]);
+
+        const statsMap = new Map<string, { totalExecutions: number; successRate: number; lastExecutedAt: Date | null }>();
+        for (const stat of executionStats) {
+            if (stat._id) {
+                const total = stat.totalExecutions || 0;
+                const completed = stat.completedExecutions || 0;
+                const rate = total > 0 ? Math.round((completed / total) * 100) : 100;
+                statsMap.set(stat._id.toString(), {
+                    totalExecutions: total,
+                    successRate: rate,
+                    lastExecutedAt: stat.lastExecutedAt || null
+                });
+            }
+        }
+
+        return workflows.map(wf => {
+            const stats = statsMap.get(wf._id.toString()) || { totalExecutions: 0, successRate: 100, lastExecutedAt: null };
+            return {
+                ...wf,
+                totalExecutions: stats.totalExecutions,
+                successRate: stats.successRate,
+                lastExecutedAt: stats.lastExecutedAt
+            };
+        });
+    } catch {
+        return workflows;
+    }
 }
 
 export async function getWorkflowById(workflowId: string, tenantId: string) {
     const workflow = await WorkflowModel.findOne({
         _id: workflowId,
         tenantId
-    });
+    }).lean();
 
-    return workflow
+    if (!workflow) return null;
+
+    try {
+        const stats = await ExecutionModel.aggregate([
+            {
+                $match: {
+                    workflowId: new Types.ObjectId(workflowId),
+                    tenantId: new Types.ObjectId(tenantId)
+                }
+            },
+            {
+                $group: {
+                    _id: "$workflowId",
+                    totalExecutions: { $sum: 1 },
+                    completedExecutions: {
+                        $sum: { $cond: [{ $eq: ["$status", "COMPLETED"] }, 1, 0] }
+                    },
+                    lastExecutedAt: { $max: "$createdAt" }
+                }
+            }
+        ]);
+
+        const stat = stats[0];
+        const total = stat?.totalExecutions || 0;
+        const completed = stat?.completedExecutions || 0;
+        const rate = total > 0 ? Math.round((completed / total) * 100) : 100;
+
+        return {
+            ...workflow,
+            totalExecutions: total,
+            successRate: rate,
+            lastExecutedAt: stat?.lastExecutedAt || null
+        };
+    } catch {
+        return workflow;
+    }
 }
 
 interface UpdateWorkflowInput {

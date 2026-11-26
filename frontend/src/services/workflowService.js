@@ -17,7 +17,9 @@ export const workflowService = {
           _id: normalizedId,
           status: (w.status || 'ACTIVE').toUpperCase(),
           tags: Array.isArray(w.tags) ? w.tags : ['orchestration', 'dag'],
-          totalExecutions: w.totalExecutions || 0,
+          totalExecutions: w.totalExecutions !== undefined ? w.totalExecutions : 0,
+          successRate: w.successRate !== undefined ? w.successRate : 100,
+          lastExecutedAt: w.lastExecutedAt || null,
           triggerType: w.triggerType || w.nodes?.find((n) => n.type === 'trigger' || n.type === 'start')?.data?.config?.triggerType || 'webhook',
         };
       });

@@ -19,10 +19,35 @@ function formatExecution(record) {
 
   const normalizedId = record._id ? record._id.toString() : (record.id ? record.id.toString() : '');
 
+  // Calculate overall execution duration in ms
+  const totalDurationMs = (record.startedAt && record.completedAt)
+    ? Math.max(1, new Date(record.completedAt) - new Date(record.startedAt))
+    : (record.startedAt
+      ? Math.max(1, Date.now() - new Date(record.startedAt))
+      : 0);
+
+  // Client-side guard: if all nodes completed cleanly, reflect COMPLETED status
+  let resolvedStatus = record.status;
+  let resolvedCompletedAt = record.completedAt;
+  const nodes = record.nodeExecutions || [];
+  if (resolvedStatus === 'RUNNING' && nodes.length > 0) {
+    const hasFailed = nodes.some((n) => n.status === 'FAILED');
+    const lastNode = nodes[nodes.length - 1];
+    const isTerminal = lastNode?.nodeType === 'end' || lastNode?.nodeType === 'terminal';
+    const allDone = nodes.every((n) => n.status === 'COMPLETED');
+    if (!hasFailed && (isTerminal || allDone)) {
+      resolvedStatus = 'COMPLETED';
+      resolvedCompletedAt = lastNode?.completedAt || new Date();
+    }
+  }
+
   return {
     ...record,
     id: normalizedId,
     _id: normalizedId,
+    status: resolvedStatus,
+    completedAt: resolvedCompletedAt,
+    durationMs: record.durationMs || totalDurationMs,
     workflowName: record.workflowName || record.workflowSnapshot?.name || 'Workflow Execution',
     timeline: (record.timeline && record.timeline.length > 0) ? record.timeline : timeline,
   };

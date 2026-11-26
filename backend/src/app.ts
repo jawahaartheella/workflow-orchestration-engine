@@ -25,14 +25,6 @@ app.get('/health', (_req, res) => {
     });
 });
 
-app.get('/api/test-auth', apiKeyAuth, (_req, res) => {
-    res.status(200).json({
-        message: 'Authentication successful',
-        tenantId: res.locals.tenantId,
-        apiKeyId: res.locals.apiKeyId
-    });
-});
-
 app.use('/api/auth', authRoutes);
 app.use('/api/api-keys', apiKeyRoutes);
 app.use('/api/workflows', workflowRoutes);

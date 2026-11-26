@@ -166,7 +166,7 @@ async function seedDemoData(): Promise<void> {
         }
 
         console.log('\n======================================================');
-        console.log('DEMO CREDENTIALS READY FOR 7:00 PM REVIEW:');
+        console.log('DEMO & EVALUATION CREDENTIALS:');
         console.log('Acme Tenant ID:   ', acmeTenant._id.toString());
         console.log('Acme API Key:     ', acmeSecret);
         console.log('Beta Tenant ID:   ', betaTenant._id.toString());

@@ -4,15 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tsx src/tests/sprint1-auth-alignment.test.ts && tsx src/tests/sprint2-saga-nodes.test.ts && tsx src/tests/sprint3-queue-worker.test.ts && tsx src/tests/sprint4-e2e.test.ts",
-    "test:sprint1": "tsx src/tests/sprint1-auth-alignment.test.ts",
-    "test:sprint2": "tsx src/tests/sprint2-saga-nodes.test.ts",
-    "test:sprint3": "tsx src/tests/sprint3-queue-worker.test.ts",
-    "test:sprint4": "tsx src/tests/sprint4-e2e.test.ts",
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --noEmit",
     "worker": "tsx src/worker.ts",
     "seed": "tsx src/seed-demo-saga.ts",
-    "build": "tsc --noEmit",
-    "dev": "tsx watch src/server.ts"
+    "test": "tsx src/tests/sprint1-auth-alignment.test.ts && tsx src/tests/sprint2-saga-nodes.test.ts && tsx src/tests/sprint3-queue-worker.test.ts && tsx src/tests/sprint4-e2e.test.ts"
   },
   "keywords": [],
   "author": "",

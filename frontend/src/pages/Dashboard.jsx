@@ -114,9 +114,12 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
     failedExecutions: 0,
   });
   const [nodeDistribution, setNodeDistribution] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadData() {
+    let isMounted = true;
+    async function loadData(isInitial = false) {
+      if (isInitial) setLoading(true);
       try {
         const wfList = await workflowService.getWorkflows(activeTenant?.id);
         const execList = await executionService.getExecutions({ tenantId: activeTenant?.id });
@@ -124,74 +127,92 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
         const safeWfs = Array.isArray(wfList) ? wfList : [];
         const safeExecs = Array.isArray(execList) ? execList : [];
 
-        setWorkflows(safeWfs);
-        setExecutions(safeExecs);
+        if (isMounted) {
+          setWorkflows(safeWfs);
+          setExecutions(safeExecs);
 
-        const totalWf = safeWfs.length;
-        const activeWf = safeWfs.filter((w) => w.status === 'ACTIVE').length;
-        const totalEx = safeExecs.length;
-        const failedEx = safeExecs.filter((e) =>
-          ['FAILED', 'COMPENSATION_FAILED', 'COMPENSATED'].includes(e.status)
-        ).length;
-        const successEx = safeExecs.filter((e) => e.status === 'COMPLETED').length;
-        const rate = totalEx > 0 ? ((successEx / totalEx) * 100).toFixed(1) : '100.0';
+          const totalWf = safeWfs.length;
+          const activeWf = safeWfs.filter((w) => w.status === 'ACTIVE').length;
+          const totalEx = safeExecs.length;
+          const failedEx = safeExecs.filter((e) =>
+            ['FAILED', 'COMPENSATION_FAILED', 'COMPENSATED'].includes(e.status)
+          ).length;
+          const successEx = safeExecs.filter((e) => e.status === 'COMPLETED').length;
+          const rate = totalEx > 0 ? ((successEx / totalEx) * 100).toFixed(1) : '100.0';
 
-        setStats({
-          totalWorkflows: totalWf,
-          activeWorkflows: activeWf,
-          totalExecutions: totalEx,
-          successRate: rate,
-          failedExecutions: failedEx,
-        });
-
-        // Compute actual node breakdown from real workflow definitions
-        if (safeWfs.length > 0) {
-          const counts = {};
-          let totalNodes = 0;
-          safeWfs.forEach((wf) => {
-            (wf.nodes || []).forEach((node) => {
-              const type = node.type || 'task';
-              counts[type] = (counts[type] || 0) + 1;
-              totalNodes++;
-            });
+          setStats({
+            totalWorkflows: totalWf,
+            activeWorkflows: activeWf,
+            totalExecutions: totalEx,
+            successRate: rate,
+            failedExecutions: failedEx,
           });
 
-          if (totalNodes > 0) {
-            const palette = {
-              task: { name: 'Task Runner', color: '#6366f1' },
-              condition: { name: 'Conditions', color: '#f59e0b' },
-              api: { name: 'API Request', color: '#06b6d4' },
-              http: { name: 'HTTP Client', color: '#0ea5e9' },
-              start: { name: 'Triggers', color: '#10b981' },
-              trigger: { name: 'Triggers', color: '#10b981' },
-              end: { name: 'Terminal Nodes', color: '#8b5cf6' },
-            };
-
-            const dist = Object.entries(counts).map(([type, cnt]) => {
-              const meta = palette[type] || { name: type, color: '#94a3b8' };
-              return {
-                name: meta.name,
-                value: Math.round((cnt / totalNodes) * 100),
-                color: meta.color,
-              };
+          // Compute actual node breakdown from real workflow definitions
+          if (safeWfs.length > 0) {
+            const counts = {};
+            let totalNodes = 0;
+            safeWfs.forEach((wf) => {
+              (wf.nodes || []).forEach((node) => {
+                const type = node.type || 'task';
+                counts[type] = (counts[type] || 0) + 1;
+                totalNodes++;
+              });
             });
-            setNodeDistribution(dist);
+
+            if (totalNodes > 0) {
+              const palette = {
+                task: { name: 'Task Runner', color: '#6366f1' },
+                condition: { name: 'Conditions', color: '#f59e0b' },
+                api: { name: 'API Request', color: '#06b6d4' },
+                http: { name: 'HTTP Client', color: '#0ea5e9' },
+                start: { name: 'Triggers', color: '#10b981' },
+                trigger: { name: 'Triggers', color: '#10b981' },
+                end: { name: 'Terminal Nodes', color: '#8b5cf6' },
+              };
+
+              const dist = Object.entries(counts).map(([type, cnt]) => {
+                const meta = palette[type] || { name: type, color: '#94a3b8' };
+                return {
+                  name: meta.name,
+                  value: Math.round((cnt / totalNodes) * 100),
+                  color: meta.color,
+                };
+              });
+              setNodeDistribution(dist);
+            } else {
+              setNodeDistribution([]);
+            }
           } else {
             setNodeDistribution([]);
           }
-        } else {
-          setNodeDistribution([]);
         }
       } catch (err) {
         console.error('Failed to load telemetry stats from backend:', err);
+      } finally {
+        if (isMounted && isInitial) {
+          setLoading(false);
+        }
       }
     }
-    loadData();
-    const interval = setInterval(loadData, 4000);
-    return () => clearInterval(interval);
+    loadData(true);
+    const interval = setInterval(() => loadData(false), 4000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [activeTenant]);
 
   const chartData = generateTimelineData(executions, chartTimeframe);
+
+  if (loading) {
+    return (
+      <div className="p-12 flex flex-col items-center justify-center min-h-[60vh] text-slate-400 gap-3">
+        <Activity className="w-8 h-8 animate-spin text-indigo-500" />
+        <span className="text-xs font-medium">Loading orchestration telemetry...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">

@@ -18,7 +18,7 @@ app.use(cors({
 
 app.use(express.json()); // Lets express read json request objects
 
-app.get('/health', (_req, res) => {
+app.get(['/health', '/healthz'], (_req, res) => {
     res.status(200).json({
         status: 'OK',
         message: 'Workflow orchestration app is running'

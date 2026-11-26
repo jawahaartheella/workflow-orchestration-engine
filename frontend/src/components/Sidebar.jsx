@@ -55,7 +55,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
           {!collapsed && (
             <div className="flex flex-col truncate">
               <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white leading-tight">
-                FlowForge
+                WorkflowSpot
               </span>
               <span className="text-[10px] uppercase font-mono tracking-wider text-indigo-500 dark:text-indigo-400 font-bold">
                 Orchestration Engine

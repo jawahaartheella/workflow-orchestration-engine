@@ -46,7 +46,7 @@ export default function Login() {
             Ω
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">
-            FlowForge Engine
+            WorkflowSpot Engine
           </h1>
           <p className="text-xs text-slate-400">
             Multi-Tenant Enterprise Workflow Orchestration Console

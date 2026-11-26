@@ -161,7 +161,7 @@ export function AuthProvider({ children }) {
 
   const currentUser = {
     name: activeTenant?.name || 'Admin Engineer',
-    email: 'admin@flowforge.io',
+    email: 'admin@workflowspot.io',
     role: 'PLATFORM_ARCHITECT',
   };
 

@@ -1,4 +1,4 @@
-# FlowForge - Multi-Tenant Workflow Orchestration Engine (Frontend)
+# WorkflowSpot - Multi-Tenant Workflow Orchestration Engine (Frontend)
 
 A high-performance, enterprise-grade SaaS frontend for a Multi-Tenant Workflow Orchestration Engine, built with **React**, **Vite**, **Tailwind CSS**, and **React Flow (@xyflow/react)**.
 

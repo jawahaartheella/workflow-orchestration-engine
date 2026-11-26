@@ -297,7 +297,7 @@ export default function Navbar({ onOpenCreateWorkflow }) {
                   {currentUser?.name || activeTenant?.name || 'Platform Admin'}
                 </div>
                 <div className="text-[11px] text-slate-400 truncate">
-                  {currentUser?.email || (activeTenant ? `admin@${activeTenant.slug || 'company'}.com` : 'admin@flowforge.dev')}
+                  {currentUser?.email || (activeTenant ? `admin@${activeTenant.slug || 'company'}.com` : 'admin@workflowspot.dev')}
                 </div>
                 <span className="mt-1.5 inline-block text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/40 font-semibold">
                   Role: {currentUser?.role || 'Admin'}

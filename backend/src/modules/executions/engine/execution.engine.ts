@@ -160,8 +160,10 @@ export async function executeWorkflow(
                 throw new Error(result.error ?? `Node ${currentNode.id} (${currentNode.type}) failed.`);
             }
 
-            // Store outputs for downstream steps
-            previousNodeOutputs[currentNode.id] = result.output;
+            // Store outputs for downstream steps (skip terminal nodes to avoid self-referencing cycles)
+            if (currentNode.type !== 'end' && currentNode.type !== 'terminal') {
+                previousNodeOutputs[currentNode.id] = result.output;
+            }
 
             // Stop if terminal node
             if (currentNode.type === 'end' || currentNode.type === 'terminal') {
@@ -188,11 +190,29 @@ export async function executeWorkflow(
             }
         }
 
-        const lastNodeId = nodeExecutions[nodeExecutions.length - 1]?.nodeId;
-        const finalOutput = lastNodeId ? previousNodeOutputs[lastNodeId] : null;
+        const lastNode = nodeExecutions[nodeExecutions.length - 1];
+        const lastNodeId = lastNode?.nodeId;
+        const finalOutput = lastNodeId ? (previousNodeOutputs[lastNodeId] ?? lastNode?.output) : null;
 
         if (isSaga) {
             sagaStatus = 'COMPLETED';
+        }
+
+        // Persist final completion directly to MongoDB
+        if (Types.ObjectId.isValid(executionData.executionId)) {
+            await ExecutionModel.updateOne(
+                { _id: executionData.executionId },
+                {
+                    $set: {
+                        status: 'COMPLETED',
+                        isSaga,
+                        sagaStatus,
+                        output: finalOutput,
+                        error: null,
+                        completedAt: new Date()
+                    }
+                }
+            ).catch(() => {});
         }
 
         return {
@@ -291,6 +311,21 @@ export async function executeWorkflow(
                 nodeExecutions: latestExec ? (latestExec.nodeExecutions as unknown as WorkflowExecutionResult['nodeExecutions']) : nodeExecutions,
                 compensationSteps: finalCompensationSteps
             };
+        }
+
+        if (Types.ObjectId.isValid(executionData.executionId)) {
+            await ExecutionModel.updateOne(
+                { _id: executionData.executionId },
+                {
+                    $set: {
+                        status: 'FAILED',
+                        isSaga,
+                        sagaStatus: isSaga ? 'COMPENSATION_FAILED' : 'NONE',
+                        error: errorMessage,
+                        completedAt: new Date()
+                    }
+                }
+            ).catch(() => {});
         }
 
         return {

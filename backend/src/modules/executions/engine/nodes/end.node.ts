@@ -15,13 +15,16 @@ export class EndNodeHandler implements NodeHandler {
         const config = (node.data?.config || node.data || {}) as EndNodeConfig;
         const outcomeStatus = config.status || 'COMPLETED';
 
+        // Shallow copy previous outputs snapshot to prevent circular reference cycles
+        const finalOutputs = { ...(context.previousNodeOutputs || {}) };
+
         return {
             status: outcomeStatus === 'FAILED' ? 'FAILED' : 'COMPLETED',
             output: {
                 terminalNodeId: node.id,
                 outcomeStatus,
                 emitEvent: config.emitEvent || null,
-                finalOutputs: context.previousNodeOutputs,
+                finalOutputs,
                 completedAt: new Date()
             },
             ...(outcomeStatus === 'FAILED' && {

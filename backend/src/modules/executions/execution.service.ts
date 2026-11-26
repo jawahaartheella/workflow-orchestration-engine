@@ -52,19 +52,106 @@ export async function startWorkflowExecution(data: StartExecutionInput) {
 }
 
 export async function getExecutions(tenantId: string) {
-    return ExecutionModel.find({
+    const executions = await ExecutionModel.find({
         tenantId
     }).sort({
         createdAt: -1
     });
+
+    // Auto-heal any completed executions left in RUNNING status
+    for (const exec of executions) {
+        if (exec.status === 'RUNNING' && exec.nodeExecutions && exec.nodeExecutions.length > 0) {
+            const nodes = exec.nodeExecutions;
+            const hasFailed = nodes.some(n => n.status === 'FAILED');
+            const lastNode = nodes[nodes.length - 1];
+            const isTerminal = lastNode?.nodeType === 'end' || lastNode?.nodeType === 'terminal';
+            const allDone = nodes.every(n => n.status === 'COMPLETED');
+
+            if (!hasFailed && lastNode && (isTerminal || allDone)) {
+                exec.status = 'COMPLETED';
+                exec.completedAt = lastNode.completedAt || new Date();
+                ExecutionModel.updateOne(
+                    { _id: exec._id },
+                    {
+                        $set: {
+                            status: 'COMPLETED',
+                            completedAt: exec.completedAt,
+                            ...(exec.output ? {} : { output: lastNode.output })
+                        }
+                    }
+                ).catch(() => {});
+            }
+        }
+    }
+
+    return executions;
 }
 
 export async function getExecutionById(
     executionId: string,
     tenantId: string
 ) {
-    return ExecutionModel.findOne({
+    const exec = await ExecutionModel.findOne({
         _id: executionId,
         tenantId
     });
+
+    if (exec && exec.status === 'RUNNING' && exec.nodeExecutions && exec.nodeExecutions.length > 0) {
+        const nodes = exec.nodeExecutions;
+        const hasFailed = nodes.some(n => n.status === 'FAILED');
+        const lastNode = nodes[nodes.length - 1];
+        const isTerminal = lastNode?.nodeType === 'end' || lastNode?.nodeType === 'terminal';
+        const allDone = nodes.every(n => n.status === 'COMPLETED');
+
+        if (!hasFailed && lastNode && (isTerminal || allDone)) {
+            exec.status = 'COMPLETED';
+            exec.completedAt = lastNode.completedAt || new Date();
+            ExecutionModel.updateOne(
+                { _id: exec._id },
+                {
+                    $set: {
+                        status: 'COMPLETED',
+                        completedAt: exec.completedAt,
+                        ...(exec.output ? {} : { output: lastNode.output })
+                    }
+                }
+            ).catch(() => {});
+        }
+    }
+
+    return exec;
+}
+
+export async function reconcileStuckExecutions(): Promise<void> {
+    try {
+        const stuck = await ExecutionModel.find({
+            status: { $in: ['RUNNING', 'PENDING'] }
+        });
+
+        for (const exec of stuck) {
+            const nodes = exec.nodeExecutions || [];
+            if (nodes.length > 0) {
+                const hasFailed = nodes.some(n => n.status === 'FAILED');
+                const lastNode = nodes[nodes.length - 1];
+                const isTerminal = lastNode?.nodeType === 'end' || lastNode?.nodeType === 'terminal';
+                const allDone = nodes.every(n => n.status === 'COMPLETED');
+
+                if (!hasFailed && lastNode && (isTerminal || allDone)) {
+                    await ExecutionModel.updateOne(
+                        { _id: exec._id },
+                        {
+                            $set: {
+                                status: 'COMPLETED',
+                                completedAt: lastNode.completedAt || new Date(),
+                                ...(exec.output ? {} : { output: lastNode.output })
+                            }
+                        }
+                    );
+                    console.log(`[Reconciliation] Successfully repaired stuck completed execution: ${exec._id}`);
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('[Reconciliation] Error scanning stuck executions:', err);
+    }
 }

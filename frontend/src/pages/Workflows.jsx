@@ -40,8 +40,50 @@ export default function Workflows({ onOpenCreateWorkflow }) {
   const loadWorkflows = async () => {
     setLoading(true);
     try {
-      const data = await workflowService.getWorkflows(activeTenant?.id);
-      setWorkflows(data || []);
+      const [data, executions] = await Promise.all([
+        workflowService.getWorkflows(activeTenant?.id),
+        executionService.getExecutions({ tenantId: activeTenant?.id }),
+      ]);
+
+      const safeWfs = Array.isArray(data) ? data : [];
+      const safeExecs = Array.isArray(executions) ? executions : [];
+
+      // Calculate runs per workflow from actual executions
+      const execMap = {};
+      safeExecs.forEach((e) => {
+        const wid = (e.workflowId?._id || e.workflowId || '').toString();
+        if (wid) {
+          if (!execMap[wid]) {
+            execMap[wid] = { total: 0, completed: 0, lastRun: null };
+          }
+          execMap[wid].total += 1;
+          if (e.status === 'COMPLETED') {
+            execMap[wid].completed += 1;
+          }
+          const time = e.startedAt || e.createdAt;
+          if (time && (!execMap[wid].lastRun || new Date(time) > new Date(execMap[wid].lastRun))) {
+            execMap[wid].lastRun = time;
+          }
+        }
+      });
+
+      const enriched = safeWfs.map((w) => {
+        const wid = (w._id || w.id || '').toString();
+        const stat = execMap[wid];
+        const total = stat?.total !== undefined ? stat.total : (w.totalExecutions || 0);
+        const completed = stat?.completed || 0;
+        const rate = total > 0 ? Math.round((completed / total) * 100) : (w.successRate || 100);
+        const lastRun = stat?.lastRun || w.lastExecutedAt || null;
+
+        return {
+          ...w,
+          totalExecutions: total,
+          successRate: rate,
+          lastExecutedAt: lastRun,
+        };
+      });
+
+      setWorkflows(enriched);
     } catch (err) {
       console.error('Failed to load workflows in Workflows page:', err);
       setWorkflows([]);
@@ -196,7 +238,12 @@ export default function Workflows({ onOpenCreateWorkflow }) {
       </div>
 
       {/* Workflow Content Grid / Table */}
-      {viewMode === 'grid' ? (
+      {loading ? (
+        <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
+          <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+          <span className="text-xs font-medium">Loading workflows and execution metrics...</span>
+        </div>
+      ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredWorkflows.map((wf) => (
             <WorkflowCard

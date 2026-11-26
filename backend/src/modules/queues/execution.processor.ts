@@ -49,29 +49,46 @@ export async function processWorkflowJob(payload: WorkflowJobPayload): Promise<v
     execution.startedAt = execution.startedAt || new Date();
     await execution.save();
 
-    // 5. Execute workflow / Saga through the execution engine
-    const result = await executeWorkflow(workflow, {
-        executionId: execution._id.toString(),
-        tenantId,
-        workflowId: workflow._id.toString(),
-        workflowInput: input ?? {}
-    });
+    try {
+        // 5. Execute workflow / Saga through the execution engine
+        const result = await executeWorkflow(workflow, {
+            executionId: execution._id.toString(),
+            tenantId,
+            workflowId: workflow._id.toString(),
+            workflowInput: input ?? {}
+        });
 
-    // 6. Persist final results and status in MongoDB
-    const latest = await ExecutionModel.findById(executionId);
-    if (latest) {
-        latest.status = result.status;
-        latest.output = result.output;
-        latest.error = result.error;
-        latest.isSaga = result.isSaga;
-        latest.sagaStatus = result.sagaStatus;
-        latest.completedAt = new Date();
-        if (result.nodeExecutions && result.nodeExecutions.length > 0) {
-            latest.set('nodeExecutions', result.nodeExecutions);
-        }
-        if (result.compensationSteps && result.compensationSteps.length > 0) {
-            latest.set('compensationSteps', result.compensationSteps);
-        }
-        await latest.save();
+        // 6. Persist final results and status atomically in MongoDB
+        await ExecutionModel.updateOne(
+            { _id: new Types.ObjectId(executionId) },
+            {
+                $set: {
+                    status: result.status,
+                    output: result.output,
+                    error: result.error,
+                    isSaga: result.isSaga,
+                    sagaStatus: result.sagaStatus,
+                    completedAt: new Date(),
+                    ...(result.nodeExecutions && result.nodeExecutions.length > 0 ? { nodeExecutions: result.nodeExecutions } : {}),
+                    ...(result.compensationSteps && result.compensationSteps.length > 0 ? { compensationSteps: result.compensationSteps } : {})
+                }
+            }
+        );
+    } catch (engineError) {
+        const errorMsg = engineError instanceof Error ? engineError.message : 'Execution failed';
+        console.error(`Execution processing error for ${executionId}:`, errorMsg);
+
+        await ExecutionModel.updateOne(
+            { _id: new Types.ObjectId(executionId) },
+            {
+                $set: {
+                    status: 'FAILED',
+                    error: errorMsg,
+                    completedAt: new Date()
+                }
+            }
+        ).catch(() => {});
+
+        throw engineError;
     }
 }

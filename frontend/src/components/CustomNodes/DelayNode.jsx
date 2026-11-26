@@ -12,7 +12,7 @@ function DelayNode({ data, selected }) {
 
   return (
     <div
-      className={`min-w-[200px] max-w-[240px] rounded-2xl bg-white dark:bg-slate-900 border-2 transition-all shadow-md ${
+      className={`min-w-[200px] max-w-[240px] rounded-2xl bg-white dark:bg-slate-900 border-2 transition-colors shadow-md ${
         isInCycle
           ? 'border-rose-500 shadow-rose-500/40 ring-4 ring-rose-500/20'
           : selected

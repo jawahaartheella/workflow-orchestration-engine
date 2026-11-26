@@ -10,10 +10,7 @@ import {
   Users2,
   Settings,
   Database,
-  Layers,
   ChevronLeft,
-  ChevronRight,
-  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -39,13 +36,24 @@ export default function Sidebar({ collapsed, setCollapsed }) {
       }`}
     >
       {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-800">
-        <NavLink to="/" className="flex items-center gap-3 overflow-hidden">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center font-black text-white shadow-md shadow-indigo-600/30 shrink-0 text-base">
+      <div
+        className={`h-16 flex items-center border-b border-slate-200 dark:border-slate-800 transition-all ${
+          collapsed ? 'justify-center px-0' : 'justify-between px-4'
+        }`}
+      >
+        <NavLink
+          to="/"
+          onClick={() => {
+            if (collapsed) setCollapsed(false);
+          }}
+          className={`flex items-center gap-3 ${collapsed ? 'justify-center cursor-pointer' : 'overflow-hidden'}`}
+          title={collapsed ? 'Click to expand sidebar' : undefined}
+        >
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center font-black text-white shadow-md shadow-indigo-600/30 shrink-0 text-base hover:scale-105 transition-transform">
             Ω
           </div>
           {!collapsed && (
-            <div className="flex flex-col">
+            <div className="flex flex-col truncate">
               <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white leading-tight">
                 FlowForge
               </span>
@@ -56,29 +64,47 @@ export default function Sidebar({ collapsed, setCollapsed }) {
           )}
         </NavLink>
 
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors hidden sm:block"
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
+        {/* Collapse Button - ONLY shown in maximized/open mode */}
+        {!collapsed && (
+          <button
+            onClick={() => setCollapsed(true)}
+            title="Collapse sidebar"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors hidden sm:block shrink-0 cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Navigation Links */}
       <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            item.path === '/'
-              ? location.pathname === '/'
-              : location.pathname.startsWith(item.path);
+          let isActive = false;
+          if (item.path === '/') {
+            isActive = location.pathname === '/';
+          } else if (item.path === '/executions') {
+            isActive = location.pathname === '/executions';
+          } else if (item.path === '/executions/live') {
+            isActive = location.pathname.startsWith('/executions/') && location.pathname !== '/executions';
+          } else {
+            isActive = location.pathname.startsWith(item.path);
+          }
 
           return (
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === '/executions' || item.path === '/'}
               title={collapsed ? item.label : undefined}
+              onClick={() => {
+                if (collapsed) {
+                  setCollapsed(false);
+                }
+              }}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all duration-150 ${
+                collapsed ? 'justify-center cursor-pointer' : ''
+              } ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 font-bold'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
@@ -116,8 +142,14 @@ export default function Sidebar({ collapsed, setCollapsed }) {
           </div>
         </div>
       ) : (
-        <div className="p-3 flex justify-center border-t border-slate-200 dark:border-slate-800">
-          <Database className="w-5 h-5 text-indigo-500" title={`Connected: ${activeTenant?.database}`} />
+        <div
+          onClick={() => {
+            if (collapsed) setCollapsed(false);
+          }}
+          className="p-3 flex justify-center border-t border-slate-200 dark:border-slate-800 cursor-pointer"
+          title="Click to expand tenant details"
+        >
+          <Database className="w-5 h-5 text-indigo-500 hover:scale-110 transition-transform" />
         </div>
       )}
     </aside>

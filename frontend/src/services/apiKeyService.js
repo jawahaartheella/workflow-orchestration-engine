@@ -1,37 +1,22 @@
 import apiClient from './api';
-import { MOCK_API_KEYS } from '../data/mockData';
 
-const API_KEYS_STORAGE_KEY = 'wf_apikeys_cache';
-
-function getCachedKeys() {
-  try {
-    const raw = localStorage.getItem(API_KEYS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (err) {
-    console.warn('Failed to parse cached API keys', err);
-  }
-  localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(MOCK_API_KEYS));
-  return MOCK_API_KEYS;
-}
-
-function setCachedKeys(keys) {
-  try {
-    localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keys));
-  } catch (err) {
-    console.warn('Failed to persist API keys', err);
-  }
-}
-
-/**
- * Helper to generate cryptographic-style token
- */
-function generateCryptoRandomString(bytes = 16) {
-  const chars = '0123456789abcdef';
-  let result = '';
-  for (let i = 0; i < bytes * 2; i++) {
-    result += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return result;
+function formatApiKey(k) {
+  if (!k) return null;
+  const id = k._id ? k._id.toString() : (k.id ? k.id.toString() : '');
+  const isRevoked = (k.status || '').toLowerCase() === 'revoked';
+  return {
+    id,
+    _id: id,
+    name: k.name || 'Unnamed API Key',
+    environment: k.environment || 'production',
+    scopes: k.scopes || ['workflows:read', 'workflows:execute'],
+    keyMasked: k.keyMasked || `wk_live_${id ? id.substring(0, 4) : 'key'}••••••••••••${id ? id.slice(-4) : 'auth'}`,
+    fullKey: k.fullKey || k.secret || null,
+    status: isRevoked ? 'REVOKED' : 'ACTIVE',
+    createdAt: k.createdAt || new Date().toISOString(),
+    lastUsedAt: k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString() : 'Never',
+    tenantId: k.tenantId ? k.tenantId.toString() : '',
+  };
 }
 
 export const apiKeyService = {
@@ -41,62 +26,44 @@ export const apiKeyService = {
   async getApiKeys() {
     try {
       const res = await apiClient.get('/api-keys');
-      if (res && res.data) {
-        return Array.isArray(res.data) ? res.data : [];
+      const list = res?.data?.data || res?.data || (Array.isArray(res) ? res : []);
+      if (Array.isArray(list)) {
+        return list.map(formatApiKey);
       }
       return [];
-    } catch {
-      const all = getCachedKeys();
-      return all;
+    } catch (err) {
+      console.error('Failed to fetch API keys from backend:', err);
+      return [];
     }
   },
 
   /**
    * Generate a new cryptographic API key
    */
-  async generateApiKey({ name }) {
+  async generateApiKey({ name, scopes, environment }) {
     try {
       const res = await apiClient.post('/api-keys', { name });
-      if (res && res.data) {
-        return {
-          id: res.data.id,
-          name: res.data.name,
-          fullKey: res.data.secret,
-          keyMasked: res.data.secret ? `${res.data.secret.substring(0, 8)}••••••••••••` : '••••••••',
-          status: 'ACTIVE',
-          createdAt: new Date().toISOString(),
-          lastUsedAt: 'Never',
-        };
-      }
-    } catch {
-      // Fallback
+      const created = res?.data?.data || res?.data || res;
+      const id = created._id ? created._id.toString() : (created.id ? created.id.toString() : '');
+      const secret = created.secret;
+
+      return {
+        id,
+        _id: id,
+        name: created.name || name,
+        environment: environment || 'production',
+        scopes: scopes || ['workflows:read', 'workflows:execute'],
+        fullKey: secret,
+        keyMasked: secret ? `${secret.substring(0, 8)}••••••••••••` : `wk_live_${id.substring(0, 4)}••••••••••••${id.slice(-4)}`,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        lastUsedAt: 'Never',
+        tenantId: created.tenantId ? created.tenantId.toString() : '',
+      };
+    } catch (err) {
+      console.error('Failed to create API key on backend:', err);
+      throw err;
     }
-
-    const tenant = localStorage.getItem('wf_active_tenant') || 'acme_corp';
-    const entropy = generateCryptoRandomString(16);
-    const checksum = generateCryptoRandomString(2);
-    const fullKey = `wk_live_${tenant}_${entropy}.${checksum}`;
-    const keyMasked = `wk_live_${tenant}_${entropy.substring(0, 4)}••••••••••••${checksum}`;
-
-    const newKey = {
-      id: `key_live_${Date.now().toString(36)}`,
-      name,
-      prefix: `wk_live_${tenant}_`,
-      keyMasked,
-      fullKey, // Returned once for user copy
-      tenantId: tenant,
-      scopes: ['workflows:read', 'workflows:execute'],
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      lastUsedAt: 'Never',
-      usageCount: 0,
-    };
-
-    const all = getCachedKeys();
-    all.unshift(newKey);
-    setCachedKeys(all);
-
-    return newKey;
   },
 
   /**
@@ -105,51 +72,39 @@ export const apiKeyService = {
   async revokeApiKey(id) {
     try {
       const res = await apiClient.delete(`/api-keys/${id}`);
-      return res?.data || true;
-    } catch {
-      // Fallback
+      return res?.data?.data || res?.data || true;
+    } catch (err) {
+      console.error(`Failed to revoke API key ${id}:`, err);
+      throw err;
     }
-
-    const all = getCachedKeys();
-    const item = all.find((k) => k.id === id);
-    if (item) {
-      item.status = 'REVOKED';
-      setCachedKeys(all);
-    }
-    return item;
   },
 
   /**
-   * Rotate key: issues new entropy while keeping key name and permissions
+   * Rotate key: revokes existing key and creates a fresh key with the same name
    */
   async rotateApiKey(id) {
-    const all = getCachedKeys();
-    const item = all.find((k) => k.id === id);
-    if (!item) throw new Error('Key not found');
+    try {
+      const keys = await this.getApiKeys();
+      const existing = keys.find((k) => k.id === id);
+      if (!existing) throw new Error('API key not found to rotate');
 
-    const entropy = generateCryptoRandomString(16);
-    const checksum = generateCryptoRandomString(2);
-    const fullKey = `wk_live_${item.tenantId}_${entropy}.${checksum}`;
-    const keyMasked = `wk_live_${item.tenantId}_${entropy.substring(0, 4)}••••••••••••${checksum}`;
-
-    item.fullKey = fullKey;
-    item.keyMasked = keyMasked;
-    item.status = 'ACTIVE';
-    item.lastUsedAt = 'Rotated just now';
-    item.rotatedAt = new Date().toISOString();
-
-    setCachedKeys(all);
-    return item;
+      await this.revokeApiKey(id);
+      return await this.generateApiKey({
+        name: existing.name,
+        scopes: existing.scopes,
+        environment: existing.environment,
+      });
+    } catch (err) {
+      console.error(`Failed to rotate API key ${id}:`, err);
+      throw err;
+    }
   },
 
   /**
-   * Delete key permanently
+   * Delete key permanently / revoke
    */
   async deleteApiKey(id) {
-    const all = getCachedKeys();
-    const filtered = all.filter((k) => k.id !== id);
-    setCachedKeys(filtered);
-    return true;
+    return await this.revokeApiKey(id);
   },
 };
 

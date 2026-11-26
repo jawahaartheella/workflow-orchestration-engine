@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
@@ -13,20 +11,15 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from 'recharts';
 import {
   GitBranch,
   PlayCircle,
   CheckCircle2,
   XCircle,
-  Clock,
   Zap,
-  TrendingUp,
   ArrowRight,
   Plus,
-  Server,
-  Layers,
   Activity,
   ArrowUpRight,
 } from 'lucide-react';
@@ -34,9 +27,76 @@ import {
 import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { MOCK_STATISTICS } from '../data/mockData';
 import { workflowService } from '../services/workflowService';
 import { executionService } from '../services/executionService';
+
+function generateTimelineData(executions, timeframe) {
+  const safeExecs = Array.isArray(executions) ? executions : [];
+  const now = new Date();
+
+  if (timeframe === '24h') {
+    const slots = [
+      '00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'
+    ];
+    const data = slots.map((hour) => ({ hour, total: 0, success: 0, failed: 0 }));
+
+    safeExecs.forEach((e) => {
+      const dateStr = e.startedAt || e.createdAt;
+      if (!dateStr) return;
+      const d = new Date(dateStr);
+      const diffHours = (now.getTime() - d.getTime()) / (1000 * 60 * 60);
+      if (diffHours <= 24 && diffHours >= 0) {
+        const h = d.getHours();
+        const slotIdx = Math.min(7, Math.floor(h / 3));
+        data[slotIdx].total += 1;
+        if (e.status === 'COMPLETED') {
+          data[slotIdx].success += 1;
+        } else if (['FAILED', 'COMPENSATION_FAILED', 'COMPENSATED'].includes(e.status)) {
+          data[slotIdx].failed += 1;
+        }
+      }
+    });
+    return data;
+  }
+
+  // 7 days timeline
+  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const last7Days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const dayName = daysOfWeek[d.getDay()];
+    last7Days.push({
+      date: dayName,
+      fullDate: d.toDateString(),
+      executions: 0,
+      success: 0,
+      failed: 0,
+    });
+  }
+
+  safeExecs.forEach((e) => {
+    const dateStr = e.startedAt || e.createdAt;
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    const dayEntry = last7Days.find((entry) => entry.fullDate === d.toDateString());
+    if (dayEntry) {
+      dayEntry.executions += 1;
+      if (e.status === 'COMPLETED') {
+        dayEntry.success += 1;
+      } else if (['FAILED', 'COMPENSATION_FAILED', 'COMPENSATED'].includes(e.status)) {
+        dayEntry.failed += 1;
+      }
+    }
+  });
+
+  return last7Days.map(({ date, executions, success, failed }) => ({
+    date,
+    executions,
+    success,
+    failed,
+  }));
+}
 
 export default function Dashboard({ onOpenCreateWorkflow }) {
   const navigate = useNavigate();
@@ -53,7 +113,7 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
     successRate: '100.0',
     failedExecutions: 0,
   });
-  const [nodeDistribution, setNodeDistribution] = useState(MOCK_STATISTICS.nodeExecutionDistribution);
+  const [nodeDistribution, setNodeDistribution] = useState([]);
 
   useEffect(() => {
     async function loadData() {
@@ -116,7 +176,11 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
               };
             });
             setNodeDistribution(dist);
+          } else {
+            setNodeDistribution([]);
           }
+        } else {
+          setNodeDistribution([]);
         }
       } catch (err) {
         console.error('Failed to load telemetry stats from backend:', err);
@@ -127,10 +191,7 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
     return () => clearInterval(interval);
   }, [activeTenant]);
 
-  const chartData =
-    chartTimeframe === '24h'
-      ? MOCK_STATISTICS.hourlyTimeline
-      : MOCK_STATISTICS.executionTimeline;
+  const chartData = generateTimelineData(executions, chartTimeframe);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-7xl mx-auto">
@@ -316,44 +377,52 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
             </p>
           </div>
 
-          <div className="h-56 w-full my-auto">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={nodeDistribution}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {nodeDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(val) => `${val}%`}
-                  contentStyle={{
-                    backgroundColor: isDark ? '#0f172a' : '#ffffff',
-                    borderColor: isDark ? '#334155' : '#e2e8f0',
-                    borderRadius: '10px',
-                    fontSize: '11px',
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="h-56 w-full my-auto flex items-center justify-center">
+            {nodeDistribution.length === 0 ? (
+              <div className="text-center text-xs text-slate-400 py-6">
+                No pipeline nodes configured yet.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={nodeDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {nodeDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(val) => `${val}%`}
+                    contentStyle={{
+                      backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                      borderColor: isDark ? '#334155' : '#e2e8f0',
+                      borderRadius: '10px',
+                      fontSize: '11px',
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-[11px] pt-3 border-t border-slate-100 dark:border-slate-800">
-            {nodeDistribution.map((item) => (
-              <div key={item.name} className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="text-slate-600 dark:text-slate-300 truncate">{item.name}</span>
-                <span className="font-bold text-slate-900 dark:text-white ml-auto">{item.value}%</span>
-              </div>
-            ))}
-          </div>
+          {nodeDistribution.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 text-[11px] pt-3 border-t border-slate-100 dark:border-slate-800">
+              {nodeDistribution.map((item) => (
+                <div key={item.name} className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                  <span className="text-slate-600 dark:text-slate-300 truncate">{item.name}</span>
+                  <span className="font-bold text-slate-900 dark:text-white ml-auto">{item.value}%</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -382,7 +451,7 @@ export default function Dashboard({ onOpenCreateWorkflow }) {
           <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
             {workflows.length === 0 ? (
               <div className="py-8 text-center text-xs text-slate-400">
-                No workflows registered yet for this tenant. Click "New Workflow" above to create or seed one.
+                No workflows registered yet for this tenant. Click "New Workflow" above to create one.
               </div>
             ) : (
               workflows.map((wf) => (

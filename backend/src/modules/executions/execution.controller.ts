@@ -111,4 +111,74 @@ export const getExecutionByIdController: RequestHandler = async (req, res, next)
     } catch(error) {
         next(error);
     }
-}
+};
+
+export const cancelExecutionController: RequestHandler = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const tenantId = res.locals.tenantId as string;
+
+        if (typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
+            res.status(400).json({ message: 'Invalid Execution ID.' });
+            return;
+        }
+
+        const { ExecutionModel } = await import("./execution.model.js");
+        const execution = await ExecutionModel.findOne({
+            _id: new Types.ObjectId(id),
+            tenantId: new Types.ObjectId(tenantId)
+        });
+
+        if (!execution) {
+            res.status(404).json({ message: 'Execution not found.' });
+            return;
+        }
+
+        execution.status = 'CANCELLED';
+        execution.completedAt = new Date();
+        await execution.save();
+
+        res.status(200).json({
+            message: 'Execution cancelled successfully!',
+            data: execution
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const retryExecutionController: RequestHandler = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const tenantId = res.locals.tenantId as string;
+
+        if (typeof id !== 'string' || !Types.ObjectId.isValid(id)) {
+            res.status(400).json({ message: 'Invalid Execution ID.' });
+            return;
+        }
+
+        const { ExecutionModel } = await import("./execution.model.js");
+        const execution = await ExecutionModel.findOne({
+            _id: new Types.ObjectId(id),
+            tenantId: new Types.ObjectId(tenantId)
+        });
+
+        if (!execution) {
+            res.status(404).json({ message: 'Execution not found.' });
+            return;
+        }
+
+        const newExecution = await startWorkflowExecution({
+            workflowId: execution.workflowId.toString(),
+            tenantId,
+            input: execution.input
+        });
+
+        res.status(202).json({
+            message: 'Workflow execution retried successfully!',
+            data: newExecution
+        });
+    } catch (error) {
+        next(error);
+    }
+};

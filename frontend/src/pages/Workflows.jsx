@@ -56,7 +56,8 @@ export default function Workflows({ onOpenCreateWorkflow }) {
 
   // Handlers
   const handleEdit = (wf) => {
-    navigate(`/builder?id=${wf.id}`);
+    const targetId = wf._id || wf.id;
+    navigate(`/builder?id=${targetId}`);
   };
 
   const handleDuplicate = async (id) => {

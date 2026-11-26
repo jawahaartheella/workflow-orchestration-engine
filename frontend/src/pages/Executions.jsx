@@ -1,51 +1,68 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Play,
   Pause,
   RotateCcw,
   StopCircle,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
+  Copy,
+  ExternalLink,
   Terminal,
   Activity,
   ArrowLeft,
-  Copy,
-  ExternalLink,
-  Cpu,
-  Layers,
-  Database,
 } from 'lucide-react';
 
 import ExecutionTimeline from '../components/ExecutionTimeline';
 import { executionService } from '../services/executionService';
-import { socketService } from '../services/socketService';
 import { useAuth } from '../context/AuthContext';
-import { MOCK_EXECUTIONS } from '../data/mockData';
 
 export default function Executions() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { activeTenant } = useAuth();
 
+  const [resolvedId, setResolvedId] = useState(id && id !== 'live' ? id : null);
   const [execution, setExecution] = useState(null);
   const [loading, setLoading] = useState(true);
   const [timeline, setTimeline] = useState([]);
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState('timeline'); // 'timeline' | 'payload' | 'logs'
+  const [activeTab, setActiveTab] = useState('timeline'); // 'timeline' | 'payload'
 
-  const activeId = id === 'live' || !id ? MOCK_EXECUTIONS[0].id : id;
+  // Resolve target execution id: if route is /executions/live or /executions without ID, find latest
+  useEffect(() => {
+    if (id && id !== 'live') {
+      setResolvedId(id);
+    } else {
+      setLoading(true);
+      executionService.getExecutions({ tenantId: activeTenant?.id })
+        .then((list) => {
+          if (Array.isArray(list) && list.length > 0) {
+            setResolvedId(list[0].id);
+          } else {
+            setResolvedId(null);
+            setExecution(null);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          setResolvedId(null);
+          setExecution(null);
+          setLoading(false);
+        });
+    }
+  }, [id, activeTenant]);
 
   // Real-time polling for actual backend execution status & Saga progression
   useEffect(() => {
+    if (!resolvedId) return;
+
     let timer;
     let isMounted = true;
+    setLoading(true);
 
     const fetchStatus = async () => {
       try {
-        const data = await executionService.getExecutionById(activeId);
+        const data = await executionService.getExecutionById(resolvedId);
         if (data && isMounted) {
           setExecution(data);
           setTimeline(data.timeline || []);
@@ -56,6 +73,8 @@ export default function Executions() {
           if (isOngoing) {
             timer = setTimeout(fetchStatus, 1000);
           }
+        } else if (isMounted) {
+          setLoading(false);
         }
       } catch (err) {
         console.warn('Execution poll notice:', err);
@@ -69,7 +88,7 @@ export default function Executions() {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [activeId]);
+  }, [resolvedId]);
 
   // Actions
   const handlePause = () => {
@@ -84,7 +103,7 @@ export default function Executions() {
         status: 'PAUSED',
         duration: '0ms',
         timestamp: new Date().toLocaleTimeString(),
-        message: 'Execution execution paused by operator',
+        message: 'Execution paused by operator',
       },
     ]);
   };
@@ -107,16 +126,18 @@ export default function Executions() {
   };
 
   const handleCancel = async () => {
-    const updated = await executionService.cancelExecution(activeId);
+    if (!resolvedId) return;
+    const updated = await executionService.cancelExecution(resolvedId);
     if (updated) {
       setExecution(updated);
-      setTimeline(updated.timeline);
+      setTimeline(updated.timeline || []);
     }
   };
 
   const handleRetry = async () => {
-    const retryExec = await executionService.retryExecution(activeId);
-    if (retryExec) {
+    if (!resolvedId) return;
+    const retryExec = await executionService.retryExecution(resolvedId);
+    if (retryExec && retryExec.id) {
       navigate(`/executions/${retryExec.id}`);
     }
   };
@@ -139,12 +160,15 @@ export default function Executions() {
   if (!execution) {
     return (
       <div className="p-12 text-center text-slate-400">
-        <h2 className="text-sm font-bold text-slate-200">Execution Not Found</h2>
+        <h2 className="text-sm font-bold text-slate-200">No Executions Found</h2>
+        <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+          No pipeline executions recorded yet. Trigger a workflow run to view live telemetry.
+        </p>
         <button
-          onClick={() => navigate('/executions')}
-          className="mt-4 px-4 py-2 text-xs font-semibold bg-indigo-600 text-white rounded-xl"
+          onClick={() => navigate('/workflows')}
+          className="mt-4 px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors"
         >
-          Back to History
+          View Workflows
         </button>
       </div>
     );
@@ -154,7 +178,6 @@ export default function Executions() {
   const isCompleted = execution.status === 'COMPLETED';
   const isFailed = execution.status === 'FAILED';
   const isPaused = execution.status === 'PAUSED';
-  const isCancelled = execution.status === 'CANCELLED';
 
   const statusStyles = {
     RUNNING: 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/50',
@@ -287,13 +310,15 @@ export default function Executions() {
             </button>
           )}
 
-          <button
-            onClick={() => navigate(`/builder?id=${execution.workflowId}`)}
-            className="flex items-center gap-1.5 py-2 px-3.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md shadow-indigo-600/20"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span>Open Canvas</span>
-          </button>
+          {execution.workflowId && (
+            <button
+              onClick={() => navigate(`/builder?id=${execution.workflowId}`)}
+              className="flex items-center gap-1.5 py-2 px-3.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md shadow-indigo-600/20"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Open Canvas</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -304,7 +329,7 @@ export default function Executions() {
             Pipeline Execution Progress: {execution.progress || 100}%
           </span>
           <span className="text-slate-400 font-mono">
-            Elapsed: {execution.durationMs}ms
+            Elapsed: {execution.durationMs || 0}ms
           </span>
         </div>
 
@@ -339,7 +364,7 @@ export default function Executions() {
           <div>
             <span className="text-[11px] text-slate-400">Started At</span>
             <div className="text-slate-800 dark:text-slate-200 truncate mt-0.5 font-mono">
-              {new Date(execution.startedAt).toLocaleTimeString()}
+              {execution.startedAt ? new Date(execution.startedAt).toLocaleTimeString() : 'N/A'}
             </div>
           </div>
           <div>

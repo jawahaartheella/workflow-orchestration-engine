@@ -292,3 +292,37 @@ export const deactivateWorkfolwController: RequestHandler = async (req, res, nex
         next(error);
     }
 }
+
+export const getWorkflowTemplatesController: RequestHandler = async (_req, res, next) => {
+    try {
+        const { WORKFLOW_TEMPLATES } = await import("./workflow.templates.js");
+        res.status(200).json({
+            message: "Workflow templates retrieved successfully!",
+            data: WORKFLOW_TEMPLATES
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getWorkflowTemplateByIdController: RequestHandler = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const { WORKFLOW_TEMPLATES } = await import("./workflow.templates.js");
+        const template = WORKFLOW_TEMPLATES.find(t => t.id === id);
+
+        if (!template) {
+            res.status(404).json({
+                message: "Workflow template not found."
+            });
+            return;
+        }
+
+        res.status(200).json({
+            message: "Workflow template retrieved successfully!",
+            data: template
+        });
+    } catch (error) {
+        next(error);
+    }
+};

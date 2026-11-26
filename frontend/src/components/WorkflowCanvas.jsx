@@ -35,48 +35,35 @@ const nodeTypes = {
 };
 
 function FlowCanvas({
-  initialNodes = [],
-  initialEdges = [],
+  nodes = [],
+  edges = [],
+  onNodesChange,
+  onEdgesChange,
+  setNodes,
+  setEdges,
   onNodeSelect,
   onValidationChange,
   isSimulating,
   activeSimNodeId,
   cycleEdges = [],
-  onNodesChangeParent,
-  onEdgesChangeParent,
 }) {
   const { isDark } = useTheme();
   const reactFlowWrapper = useRef(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  // Run validation only when graph structure (nodes list or edges) changes, not on continuous position deltas
+  const structureHash = useMemo(() => {
+    const nodeKeys = (nodes || []).map((n) => `${n.id}:${n.type}`).join('|');
+    const edgeKeys = (edges || []).map((e) => `${e.source}->${e.target}`).join('|');
+    return `${nodeKeys}#${edgeKeys}`;
+  }, [nodes, edges]);
 
-  // Sync when initialNodes or initialEdges change from parent
-  useEffect(() => {
-    setNodes(initialNodes);
-  }, [initialNodes, setNodes]);
-
-  useEffect(() => {
-    setEdges(initialEdges);
-  }, [initialEdges, setEdges]);
-
-  // Run validation whenever nodes or edges update
   useEffect(() => {
     const result = validateWorkflowGraph(nodes, edges);
     if (onValidationChange) {
       onValidationChange(result);
     }
-  }, [nodes, edges, onValidationChange]);
-
-  // Notify parent of updates
-  useEffect(() => {
-    if (onNodesChangeParent) onNodesChangeParent(nodes);
-  }, [nodes, onNodesChangeParent]);
-
-  useEffect(() => {
-    if (onEdgesChangeParent) onEdgesChangeParent(edges);
-  }, [edges, onEdgesChangeParent]);
+  }, [structureHash, onValidationChange]);
 
   // Handle new connection creation
   const onConnect = useCallback(
@@ -107,7 +94,9 @@ function FlowCanvas({
         },
       };
 
-      setEdges((eds) => addEdge(newEdge, eds));
+      if (setEdges) {
+        setEdges((eds) => addEdge(newEdge, eds));
+      }
     },
     [setEdges]
   );
@@ -142,20 +131,26 @@ function FlowCanvas({
         },
       };
 
-      setNodes((nds) => nds.concat(newNode));
+      if (setNodes) {
+        setNodes((nds) => nds.concat(newNode));
+      }
     },
     [screenToFlowPosition, setNodes]
   );
 
   // Highlight active node in simulation or in cycle
   const displayNodes = useMemo(() => {
-    return nodes.map((node) => {
-      const isRunning = isSimulating && node.id === activeSimNodeId;
+    if (!isSimulating) return nodes;
+    return (nodes || []).map((node) => {
+      const isRunning = node.id === activeSimNodeId;
+      if (node.data?.executionStatus === (isRunning ? 'RUNNING' : undefined)) {
+        return node;
+      }
       return {
         ...node,
         data: {
           ...node.data,
-          executionStatus: isRunning ? 'RUNNING' : node.data?.executionStatus,
+          executionStatus: isRunning ? 'RUNNING' : undefined,
         },
       };
     });
@@ -163,8 +158,9 @@ function FlowCanvas({
 
   // Style edges (turn cycle edges into glowing red)
   const displayEdges = useMemo(() => {
+    if (!cycleEdges || cycleEdges.length === 0) return edges || [];
     const cycleEdgeSet = new Set(cycleEdges);
-    return edges.map((e) => {
+    return (edges || []).map((e) => {
       const isCycleEdge = cycleEdgeSet.has(e.id);
       if (isCycleEdge) {
         return {
@@ -211,8 +207,6 @@ function FlowCanvas({
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView
-        snapToGrid
-        snapGrid={[15, 15]}
         defaultEdgeOptions={{
           animated: true,
           style: { stroke: '#6366f1', strokeWidth: 2 },

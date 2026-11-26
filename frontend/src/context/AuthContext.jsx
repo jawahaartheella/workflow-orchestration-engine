@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import apiClient from '../services/api';
-import { MOCK_TENANTS } from '../data/mockData';
 
 const AuthContext = createContext(null);
 
@@ -10,6 +10,7 @@ const DEMO_KEYS = {
 };
 
 export function AuthProvider({ children }) {
+  const navigate = useNavigate();
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('wf_api_key') || 'acme_live_secret_key_demo_98765');
   const [activeTenant, setActiveTenant] = useState(() => {
     try {
@@ -18,7 +19,7 @@ export function AuthProvider({ children }) {
     } catch {
       // ignore
     }
-    return MOCK_TENANTS[0];
+    return null;
   });
 
   const [tenants, setTenants] = useState([]);
@@ -72,11 +73,20 @@ export function AuthProvider({ children }) {
           id: t._id || t.id,
         }));
         setTenants(mapped);
+        setActiveTenant((current) => {
+          if (!current && mapped.length > 0) {
+            localStorage.setItem('wf_active_tenant_data', JSON.stringify(mapped[0]));
+            localStorage.setItem('wf_active_tenant', mapped[0].id);
+            return mapped[0];
+          }
+          return current;
+        });
       } else {
-        setTenants(MOCK_TENANTS);
+        setTenants([]);
       }
-    } catch {
-      setTenants(MOCK_TENANTS);
+    } catch (err) {
+      console.warn('Failed to fetch tenants from backend:', err);
+      setTenants([]);
     }
   }, []);
 
@@ -98,8 +108,11 @@ export function AuthProvider({ children }) {
         localStorage.setItem('wf_api_key', defaultKey);
         await verifyApiKey(defaultKey);
       }
+
+      // Navigate to the Dashboard when switching tenant context
+      navigate('/');
     }
-  }, [tenants, verifyApiKey]);
+  }, [tenants, verifyApiKey, navigate]);
 
   useEffect(() => {
     refreshTenants();
